@@ -1,0 +1,6 @@
+{
+  "name": "DSE Level Up",
+  "description": "幫助HKDSE考生鍛鍊歷屆試題底層邏輯、即時等級預測與多巴胺回饋的練習平台。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
