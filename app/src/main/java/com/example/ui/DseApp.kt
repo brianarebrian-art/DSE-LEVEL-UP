@@ -302,6 +302,11 @@ fun DashboardScreen(
       }
     }
 
+    // Target DSE Subjects Selector Card (Dropdown Component)
+    item {
+      TargetSubjectsSelectorCard()
+    }
+
     // 1. Weekly efficiency and timer trends chart
     item {
       StudyTimerAndPointsChart(completedList = completedList)
@@ -547,6 +552,193 @@ fun DashboardScreen(
     }
   }
 }
+
+// --- TARGET SUBJECTS SELECTOR WITH DROPDOWN (COMPONENT STATE) ---
+@Composable
+fun TargetSubjectsSelectorCard() {
+  // Store selected subjects in the component state (using set of subject IDs)
+  var selectedSubjects by remember { mutableStateOf(setOf("math", "english")) }
+  var expanded by remember { mutableStateOf(false) }
+
+  val allDseSubjects = listOf(
+    SubjectSelectionItem("math", "📐 數學必修部分 / Math", "Mathematics", Color(0xFF1E88E5)),
+    SubjectSelectionItem("english", "🇬🇧 英國語文 / English", "English Language", Color(0xFF43A047)),
+    SubjectSelectionItem("chinese", "🇨🇳 中國語文 / Chinese", "Chinese Language", Color(0xFFE53935)),
+    SubjectSelectionItem("liberal", "🌍 公民與社會 / CS & Liberal", "Citizenship & Social Dev", Color(0xFF8E24AA)),
+    SubjectSelectionItem("physics", "⚡ 物理科 (選修) / Phys", "Physics", Color(0xFF00ACC1)),
+    SubjectSelectionItem("chemistry", "🧪 化學科 (選修) / Chem", "Chemistry", Color(0xFF009688))
+  )
+
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("target_subjects_card"),
+    colors = CardDefaults.cardColors(
+      containerColor = MaterialTheme.colorScheme.surface
+    ),
+    border = androidx.compose.foundation.BorderStroke(
+      width = 1.dp,
+      color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+    )
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Column(modifier = Modifier.weight(1.5f)) {
+          Text(
+            "🎯 我的 HKDSE 目標報考科目",
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.primary
+          )
+          Spacer(modifier = Modifier.height(2.dp))
+          Text(
+            "自訂目標考科，狀態將保存在此 Dropdown 組件局部 State 中",
+            fontSize = 11.sp,
+            color = Color.Gray
+          )
+        }
+
+        Box(modifier = Modifier.wrapContentSize(Alignment.TopEnd)) {
+          Button(
+            onClick = { expanded = true },
+            modifier = Modifier
+              .testTag("add_subject_dropdown_btn")
+              .height(36.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.ArrowDropDown,
+              contentDescription = "Select Subjects Dropdown",
+              modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("選擇科目", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          }
+
+          DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier
+              .width(220.dp)
+              .background(MaterialTheme.colorScheme.surface)
+              .testTag("subjects_dropdown_menu")
+          ) {
+            allDseSubjects.forEach { sItem ->
+              val alreadySelected = selectedSubjects.contains(sItem.id)
+              DropdownMenuItem(
+                text = {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Column {
+                      Text(sItem.chineseName, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                      Text(sItem.englishName, fontSize = 10.sp, color = Color.Gray)
+                    }
+                    if (alreadySelected) {
+                      Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Selected",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                      )
+                    }
+                  }
+                },
+                onClick = {
+                  selectedSubjects = if (alreadySelected) {
+                    selectedSubjects - sItem.id
+                  } else {
+                    selectedSubjects + sItem.id
+                  }
+                  expanded = false
+                },
+                modifier = Modifier.testTag("dropdown_item_${sItem.id}")
+              )
+            }
+          }
+        }
+      }
+
+      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+      if (selectedSubjects.isEmpty()) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+          contentAlignment = Alignment.Center
+        ) {
+          Text(
+            "✨ 點擊右上方「選擇科目」下拉選單，規劃您的目標考科！",
+            fontSize = 11.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.Center
+          )
+        }
+      } else {
+        LazyRow(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          contentPadding = PaddingValues(vertical = 4.dp)
+        ) {
+          val activeItems = allDseSubjects.filter { selectedSubjects.contains(it.id) }
+          items(activeItems) { sItem ->
+            Surface(
+              modifier = Modifier.testTag("selected_subject_tag_${sItem.id}"),
+              color = sItem.color.copy(alpha = 0.08f),
+              shape = RoundedCornerShape(12.dp),
+              border = androidx.compose.foundation.BorderStroke(1.dp, sItem.color.copy(alpha = 0.4f))
+            ) {
+              Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+              ) {
+                Box(
+                  modifier = Modifier
+                    .size(6.dp)
+                    .background(sItem.color, CircleShape)
+                )
+                Text(
+                  text = sItem.chineseName.split(" / ").first(),
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.onSurface
+                )
+                Icon(
+                  imageVector = Icons.Default.Close,
+                  contentDescription = "Remove",
+                  tint = Color.Gray,
+                  modifier = Modifier
+                    .size(14.dp)
+                    .clickable { selectedSubjects = selectedSubjects - sItem.id }
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+data class SubjectSelectionItem(
+  val id: String,
+  val chineseName: String,
+  val englishName: String,
+  val color: Color
+)
 
 // --- NEW COMPONENT: TIMER AND CHART TRENDS ---
 @Composable
