@@ -73,6 +73,16 @@ class DseViewModel(application: Application) : AndroidViewModel(application) {
     initialValue = emptyList()
   )
 
+  val allPastPaperResources = repository.allPastPaperResources.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
+  // Mapping of resource ID to download progress (0.0f to 1.0f)
+  private val _downloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
+  val downloadProgress: StateFlow<Map<String, Float>> = _downloadProgress.asStateFlow()
+
   // Current session scoped completed question IDs dynamically updated to avoid repetition
   private val _sessionCompletedQuestionIds = MutableStateFlow<Set<String>>(emptySet())
   val sessionCompletedQuestionIds: StateFlow<Set<String>> = _sessionCompletedQuestionIds.asStateFlow()
@@ -144,6 +154,31 @@ class DseViewModel(application: Application) : AndroidViewModel(application) {
   init {
     viewModelScope.launch {
       preloadInitialQuestions()
+      preloadPastPaperResources()
+    }
+  }
+
+  fun downloadPastPaper(resourceId: String) {
+    if (_downloadProgress.value.containsKey(resourceId)) return
+    viewModelScope.launch {
+      var progress = 0.0f
+      while (progress < 1.0f) {
+        _downloadProgress.value = _downloadProgress.value + (resourceId to progress)
+        kotlinx.coroutines.delay(150)
+        progress += 0.2f
+      }
+      _downloadProgress.value = _downloadProgress.value + (resourceId to 1.0f)
+      
+      // Update database status
+      val paper = allPastPaperResources.value.firstOrNull { it.id == resourceId }
+      if (paper != null) {
+        repository.updatePastPaperDownloadStatus(
+          id = resourceId,
+          isDownloaded = true,
+          localFilePath = "/storage/emulated/0/Download/HKDSE_${paper.subject.uppercase()}_${paper.year}_${paper.paperType.uppercase()}.pdf",
+          downloadCount = paper.downloadCount + 1
+        )
+      }
     }
   }
 
@@ -570,7 +605,7 @@ class DseViewModel(application: Application) : AndroidViewModel(application) {
   // Pre-populate rewritten questions across Math, Physics, Chemistry, English
   private suspend fun preloadInitialQuestions() {
     val existing = database.dseDao().getAllQuestionsFlow().firstOrNull()
-    if (!existing.isNullOrEmpty()) return
+    if (existing != null && existing.size >= 24) return
 
     val list = listOf(
       // --- MATH TOPIC 1: Transformation Thinking ---
@@ -782,10 +817,504 @@ class DseViewModel(application: Application) : AndroidViewModel(application) {
         marks = 3,
         youtubeUrl = "https://www.youtube.com/watch?v=nC8-F_b8wGs",
         originalRef = "DSE Paper 2 Writing Grammatical Accuracy 改寫"
+      ),
+
+      // --- 2012 DSE MATHS ADAPTED ---
+      QuestionEntity(
+        id = "dse_2012_math_q",
+        subject = "math",
+        topic = "Polynomials: Remainder Theorem",
+        topicChinese = "多項式：餘數定理與因式定理",
+        difficulty = "Medium",
+        questionText = "設 \\(P(x) = 2x^3 - kx^2 + 3x - 2\\)。若 \\(P(x)\\) 能被 \\(x - 2\\) 整除，求當 \\(P(x)\\) 除以 \\(2x + 1\\) 時的餘數。",
+        optionA = "-5",
+        optionB = "-3.5",
+        optionC = "-2",
+        optionD = "0",
+        correctAnswer = "A",
+        explanationHint = "利用因式定理，代入 \\(P(2) = 0\\) 求出 \\(k\\) 的值。然後利用餘數定理，計算 \\(P(-1/2)\\) 即為餘數。",
+        explanationDetailed = "【九合一口訣：整除代入等於零，求餘直接代入！】\n\n1. 根據因式定理，P(2) = 0 得：\n2(2)^3 - k(2)^2 + 3(2) - 2 = 16 - 4k + 6 - 2 = 0, \n解出 k = 5。\n2. 多項式為 P(x) = 2x^3 - 5x^2 + 3x - 2。\n3. 除以 2x + 1 的餘數為 P(-1/2)：\n餘數 = 2(-1/2)^3 - 5(-1/2)^2 + 3(-1/2) - 2 = -0.25 - 1.25 - 1.5 - 2 = -5。\n正確答案為 A。",
+        methodologyType = "Condition Decomposition",
+        stepNotes = "1. P(2)=0 求 k=5\n2. 代 x = -0.5 求 P(-0.5) = -5",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=F5vEwMOfB9Y",
+        originalRef = "2012 DSE Math Paper 2 Q10 改寫"
+      ),
+
+      // --- 2013 DSE PHYSICS ADAPTED ---
+      QuestionEntity(
+        id = "dse_2013_phys_q",
+        subject = "physics",
+        topic = "Decibel Scale and Sound Intensity vs Distance",
+        topicChinese = "聲強級分貝與距離平方反比定律",
+        difficulty = "Hard",
+        questionText = "在距離一個點聲源 3 m 處測得的聲強級為 80 dB。問在距離該聲源 30 m 處測得的聲強級是多少？",
+        optionA = "8 dB",
+        optionB = "50 dB",
+        optionC = "60 dB",
+        optionD = "70 dB",
+        correctAnswer = "C",
+        explanationHint = "聲壓強與距離平方反比 I ∝ 1/d^2。利用分貝公式 ΔL = 10 log10(I2 / I1) 運算。",
+        explanationDetailed = "【理科思維：聲強距離10倍，分貝直接扣20 dB！】\n\n1. 聲強與距離的平方成反比：\nI2 / I1 = (3 / 30)^2 = 1/100。\n2. 聲強級變化為：\nΔL = 10 log10(1/100) = -20 dB。\n3. 30 m 處的聲強級為 80 dB - 20 dB = 60 dB。正確答案為 C。",
+        methodologyType = "Rate of Change",
+        stepNotes = "1. 距離10倍得強度1/100\n2. 算 10 * log10(1/100) = -20 dB\n3. 80 - 20 = 60 dB",
+        marks = 4,
+        youtubeUrl = "https://www.youtube.com/watch?v=nC8-F_b8wGs",
+        originalRef = "2013 DSE Physics Paper 1 Q15 改寫"
+      ),
+
+      // --- 2014 DSE CHEMISTRY ADAPTED ---
+      QuestionEntity(
+        id = "dse_2014_chem_q",
+        subject = "chemistry",
+        topic = "Mole Calculation & Stoichiometry",
+        topicChinese = "摩爾計算、限量反應物與氣體體積",
+        difficulty = "Medium",
+        questionText = "將 4.86 g 的鎂帶（\\(\\text{Mg}\\)）與 200 mL 的 \\(1.0\\text{ M}\\) 鹽酸（\\(\\text{HCl}\\)）混合反應。求在室溫及常壓（R.T.P.）下釋放出的氫氣最大體積是多少？（常溫常壓下，氣體的摩爾體積 = \\(24.0\\text{ dm}^3/\\text{mol}\\)；相對原子質量：\\(\\text{Mg} = 24.3\\)）",
+        optionA = "1.20 dm³",
+        optionB = "2.40 dm³",
+        optionC = "4.80 dm³",
+        optionD = "5.14 dm³",
+        correctAnswer = "B",
+        explanationHint = "先計算兩個反應物的摩爾數，從而找出「限量反應物」（Limiting Reactant），再依比例計算產物 \\(\\text{H}_2\\) 氣體的摩爾數與體積。",
+        explanationDetailed = "【化學名師口訣：計摩爾數先，搵出限量反應物，唔好衝動代錯數！】\n\n1. 反應方程：Mg(s) + 2HCl(aq) -> MgCl2(aq) + H2(g)。\n2. 摩爾數：\n- mol(Mg) = 4.86 / 24.3 = 0.20 mol。\n- mol(HCl) = 1.0 M * 0.2 L = 0.20 mol。\n3. 按 1:2 比例，0.20 mol 的 HCl 只需要 0.10 mol 的 Mg，因此 HCl 是限量反應物，Mg 過剩。\n4. 產生 H2 的摩爾數 = 1/2 * mol(HCl) = 0.10 mol。\n5. H2 的體積 = 0.10 mol * 24.0 dm³/mol = 2.40 dm³。正確答案為 B。",
+        methodologyType = "General",
+        stepNotes = "1. 平衡方程並算 Mg (0.2 mol) 與 HCl (0.2 mol)\n2. 判斷 HCl 為限量，H2 產生 0.1 mol\n3. 0.1 * 24.0 = 2.40 dm³",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=F5vEwMOfB9Y",
+        originalRef = "2014 DSE Chem Paper 1 Q12 改寫"
+      ),
+
+      // --- 2015 DSE ENGLISH ADAPTED ---
+      QuestionEntity(
+        id = "dse_2015_eng_q",
+        subject = "english",
+        topic = "Academic Synonym in Reading Comprehension",
+        topicChinese = "閱讀卷學術難字與上下文同義詞推導",
+        difficulty = "Medium",
+        questionText = "In academic articles reporting on public health intervention programs under Paper 1, what is the meaning of the word 'efficacy' in the sentence: 'The efficacy of the newly developed malaria vaccine was highly acclaimed by global clinical trials'?",
+        optionA = "The chemical composition of the medicine",
+        optionB = "The commercial profitability of distribution",
+        optionC = "The ability to produce the intended or desired outcome",
+        optionD = "The physical side effects of high dosages",
+        correctAnswer = "C",
+        explanationHint = "Look at the context of global clinical trials praising the vaccine. 'Efficacy' relates to efficiency and effective power.",
+        explanationDetailed = "【DSE英文科星級秘笈：efficacy 代表『成效/功效』，等同於 effectiveness！】\n\n1. 'Efficacy' 指的是『功效』或『特定藥物/干預產生期望成效的能力』。\n2. Option C 'The ability to produce the intended or desired outcome' 完美詮釋了這個詞。\n3. 因此答案是 C。",
+        methodologyType = "General",
+        stepNotes = "1. Recognize 'efficacy' is an academic synonym for 'effectiveness'\n2. Correlate with Option C",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=nC8-F_b8wGs",
+        originalRef = "2015 DSE English Paper 1 Vocab 改寫"
+      ),
+
+      // --- 2016 DSE MATHS ADAPTED ---
+      QuestionEntity(
+        id = "dse_2016_math_q",
+        subject = "math",
+        topic = "Coordinate Geometry & Tangents",
+        topicChinese = "解析幾何、圓形方程與切線相交邊界",
+        difficulty = "Hard",
+        questionText = "已知直線 \\(L: 3x - 4y + k = 0\\) 與圓 \\(C: x^2 + y^2 - 4x - 6y - 12 = 0\\) 相切。求 \\(k\\) 的所有可能值。",
+        optionA = "k = 31 或 k = -19",
+        optionB = "k = 25 或 k = -15",
+        optionC = "k = 20 或 k = -30",
+        optionD = "k = 18 或 k = -32",
+        correctAnswer = "A",
+        explanationHint = "一條直線能與圓相切，等同於該圓的中心到這條直線的比直距離等於圓的半徑。圓方程可配方得到中心坐標和半徑。",
+        explanationDetailed = "【幾何口訣：切線相切，圓心到直線距離等於半徑，配方最基本！】\n\n1. 將圓的方程配方 (Completing Square)：\n\\((x-2)^2 + (y-3)^2 = 25\\)\n得出圓心坐標為 (2, 3)，半徑 r = 5。\n\n2. 圓心到直線的垂直距離等於半徑：\n\\(d = |3(2) - 4(3) + k| / \\sqrt{3^2 + (-4)^2} = 5\\)\n\\(|k - 6| = 25\\)\n\n3. 解絕對值方程：\n- k - 6 = 25 ⟹ k = 31\n- k - 6 = -25 ⟹ k = -19\n\n故 k 的可能值為 31 或 -19。正確答案為 A。",
+        methodologyType = "Condition Decomposition",
+        stepNotes = "1. 圓方程配方求圓心 (2,3) 及半徑 r=5\n2. 點到直線距離公式 d = |3*2 - 4*3 + k| / 5 = 5\n3. |k - 6| = 25 ⟹ k = 31 或 k = -19",
+        marks = 5,
+        youtubeUrl = "https://www.youtube.com/watch?v=F5vEwMOfB9Y",
+        originalRef = "2016 DSE Math Paper 2 Q38 改寫"
+      ),
+
+      // --- 2017 DSE PHYSICS ADAPTED ---
+      QuestionEntity(
+        id = "dse_2017_phys_q",
+        subject = "physics",
+        topic = "Refraction & Total Internal Reflection",
+        topicChinese = "折射率與全內反射臨界角",
+        difficulty = "Medium",
+        questionText = "一束光線由折射率為 \\(1.6\\) 的玻璃射向空氣。求當此光線由該玻璃射向空氣時，發生全內反射（Total Internal Reflection）的臨界角（Critical Angle）為多少？",
+        optionA = "30.0°",
+        optionB = "38.7°",
+        optionC = "45.0°",
+        optionD = "51.3°",
+        correctAnswer = "B",
+        explanationHint = "臨界角 \\(\\theta_c\\) 滿足公式 \\(\\sin(\\theta_c) = 1 / n\\)，其中 \\(n\\) 為玻璃折射率。在此處為 \\(n = 1.6\\)。",
+        explanationDetailed = "【物理光學口訣：密去疏先有全反射，臨界角正弦值就是折射率的倒數！】\n\n1. 臨界角 θc 公式為：\nsin(θc) = 1 / n = 1 / 1.6 = 0.625。\n2. 計算反三角函數：\nθc = sin^-1(0.625) ≈ 38.7°。\n\n正確答案為 B。",
+        methodologyType = "General",
+        stepNotes = "1. 代入臨界角正弦公式 sin(theta_c) = 1 / 1.6 = 0.625\n2. 取 arcsin 獲得約 38.7°",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=nC8-F_b8wGs",
+        originalRef = "2017 DSE Physics Paper 1 Q22 改寫"
+      ),
+
+      // --- 2018 DSE CHEMISTRY ADAPTED ---
+      QuestionEntity(
+        id = "dse_2018_chem_q",
+        subject = "chemistry",
+        topic = "Chemical Bonding and Structure",
+        topicChinese = "化學鍵、晶體結構與熔沸點對比",
+        difficulty = "Medium",
+        questionText = "下列哪一種第三週期（Period 3）的氧化物在常溫下以巨型共價網絡結構（Giant Covalent Network）存在，並且熔點最高？",
+        optionA = "氧化鈉 (Sodium oxide)",
+        optionB = "二氧化矽 (Silicon dioxide)",
+        optionC = "氧化鋁 (Aluminium oxide)",
+        optionD = "二氧化硫 (Sulfur dioxide)",
+        correctAnswer = "B",
+        explanationHint = "巨型共價網絡結構是由無數原子通過共價鍵互相連接構成的晶體。二氧化矽（或稱石英）就是最具代表性的例子。",
+        explanationDetailed = "【化學背誦口訣：第三週期氧化物，二氧化矽巨型共價熔點高！】\n\n1. 氧化鈉 (Na2O) 和氧化鋁 (Al2O3) 是巨型離子結構。\n2. 二氧化硫 (SO2) 是簡單分子結構，分子間僅靠弱范德華力結合，常溫是氣體。\n3. 二氧化矽 (SiO2) 是巨型共價網絡結構，熔點極高。正確答案為 B。",
+        methodologyType = "General",
+        stepNotes = "1. 化學結構分析：離子、共價網絡、分子\n2. 識別二氧化矽為巨型共價晶體",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=F5vEwMOfB9Y",
+        originalRef = "2018 DSE Chem Paper 1 Q7 改寫"
+      ),
+
+      // --- 2019 DSE ENGLISH ADAPTED ---
+      QuestionEntity(
+        id = "dse_2019_eng_q",
+        subject = "english",
+        topic = "Prepositions & Cohesive Connectives",
+        topicChinese = "寫作語法：讓步介詞與高級轉折連接詞",
+        difficulty = "Hard",
+        questionText = "Complete the academic sentence below: '________ the prominent environmental and financial setbacks associated with nuclear fission, it remains a pivotal component of global zero-emission strategies.'",
+        optionA = "In addition to",
+        optionB = "Notwithstanding",
+        optionC = "Consequently",
+        optionD = "On the contrary",
+        correctAnswer = "B",
+        explanationHint = "The sentence describes negative aspects of nuclear fission (setbacks) but establishes that it remains highly important (pivotal component). This is a contrast or concession. Choose a preposition meaning 'despite'.",
+        explanationDetailed = "【DSE星級語法秘笈：Notwithstanding 是引導讓步關係的高級介詞（相當於 Despite），後面加名詞短語！】\n\n1. 空格後是名詞短語 'the prominent setbacks...'。\n2. 語義上，前半句是缺點，後半句是其依然重要的事實，故形成讓步轉折關係。\n3. 'Notwithstanding'（儘管）在此處引導名詞短語，完美符合。正確答案為 B。",
+        methodologyType = "General",
+        stepNotes = "1. Contrast sentence logic: negative vs positive\n2. Match with Notwithstanding (Despite)",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=nC8-F_b8wGs",
+        originalRef = "2019 DSE English Writing Grammatical Accuracy 改寫"
+      ),
+
+      // --- 2020 DSE MATHS ADAPTED ---
+      QuestionEntity(
+        id = "dse_2020_math_q",
+        subject = "math",
+        topic = "Geometric Progressions",
+        topicChinese = "等比數列、首兩項與無限項之和",
+        difficulty = "Hard",
+        questionText = "已知一無限等比數列 (Infinite Geometric Progression) 的首兩項之和為 \\(12\\)，且其無限項之和 (Sum to Infinity) 存在且為 \\(16\\)。求該數列的可能公比 \\(r\\)。",
+        optionA = "r = 1/2 或 r = -1/2",
+        optionB = "r = 1/2",
+        optionC = "r = 1/4 或 r = -1/4",
+        optionD = "r = 3/4",
+        correctAnswer = "A",
+        explanationHint = "設首項為 \\(a\\)，公比為 \\(r\\)。首兩項之和式：\\(a + ar = 12\\)。無限項之和式：\\(a / (1-r) = 16\\)。兩式聯立求解。",
+        explanationDetailed = "【聯立等比方程，消去首項a直接得出公比二次方程！】\n\n1. 方程式：\n- 方程 (1)：a(1 + r) = 12\n- 方程 (2)：a / (1 - r) = 16 ⟹ a = 16(1 - r)\n2. 將方程 (2) 代入方程 (1)：\n16(1 - r)(1 + r) = 12 ⟹ 16(1 - r^2) = 12 ⟹ 1 - r^2 = 3/4 ⟹ r^2 = 1/4\n3. 解得：r = 1/2 或 r = -1/2 (兩者均滿足 |r| < 1)。正確答案為 A。",
+        methodologyType = "Transformation Thinking",
+        stepNotes = "1. 首兩項：a(1+r) = 12\n2. 無限和：a = 16(1-r)\n3. 聯立消去 a 求得 r^2 = 1/4 ⟹ r = ±1/2",
+        marks = 4,
+        youtubeUrl = "https://www.youtube.com/watch?v=F5vEwMOfB9Y",
+        originalRef = "2020 DSE Math Paper 2 Q40 改寫"
+      ),
+
+      // --- 2021 DSE PHYSICS ADAPTED ---
+      QuestionEntity(
+        id = "dse_2021_phys_q",
+        subject = "physics",
+        topic = "Newton's Laws of Motion & Friction",
+        topicChinese = "牛頓運動定律、斜坡匀速滑行與摩擦力",
+        difficulty = "Easy",
+        questionText = "一個質量為 \\(2\\text{ kg}\\) 的木塊以恆定速度 \\(3\\text{ m/s}\\) 沿著一個與水平成 \\(30^\\circ\\) 的粗糙斜坡下滑。求作用在木塊上的摩擦力是多少？（重力加速度 \\(g = 9.81\\text{ m/s}^2\\)）",
+        optionA = "5.88 N",
+        optionB = "9.81 N",
+        optionC = "16.99 N",
+        optionD = "19.62 N",
+        correctAnswer = "B",
+        explanationHint = "「恆定速度下滑」代表物體處予平衡狀態（Equilibrium），即合外力為零。下滑分力等於摩擦力。",
+        explanationDetailed = "【物理概念：匀速即是合力為零！斜面上下滑分力等於摩擦力！】\n\n1. 因為木塊是匀速運動，所以合外力為零。\n2. 沿斜面向下的重力分力為：\nF_down = m g sinθ = 2 * 9.81 * sin(30°) = 9.81 N。\n3. 因此摩擦力大小也是 9.81 N。正確答案為 B。",
+        methodologyType = "Condition Decomposition",
+        stepNotes = "1. 匀速表示合外力為 0\n2. 摩擦力與重力沿斜坡分力相平衡 f = mg*sin(30°)\n3. 2 * 9.81 * 0.5 = 9.81 N",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=nC8-F_b8wGs",
+        originalRef = "2021 DSE Physics Paper 1 Q6 改寫"
+      ),
+
+      // --- 2022 DSE CHEMISTRY ADAPTED ---
+      QuestionEntity(
+        id = "dse_2022_chem_q",
+        subject = "chemistry",
+        topic = "Volumetric Neutralization Reaction",
+        topicChinese = "酸鹼滴定、二元酸與摩爾濃度中和",
+        difficulty = "Medium",
+        questionText = "在一次滴定實驗中，需要 \\(30.0\\text{ mL}\\) 的 \\(0.12\\text{ M}\\) 氫氧化鈉溶液（\\(\\text{NaOH}\\)）來完全中和 \\(15.0\\text{ mL}\\) 的某二元酸（\\(\\text{H}_2\\text{A}\\)）水溶液。求該二元酸的摩爾濃度是多少？",
+        optionA = "0.06 M",
+        optionB = "0.12 M",
+        optionC = "0.24 M",
+        optionD = "0.48 M",
+        correctAnswer = "B",
+        explanationHint = "注意二元酸 \\(\\text{H}_2\\text{A}\\) 每個分子可以釋放兩個 \\(\\text{H}^+\\) 離子。寫出中和反應方程，摩爾比為 1:2。",
+        explanationDetailed = "【滴定核心：二元酸中和二倍強鹼，反應摩爾比為 1:2！】\n\n1. 中和反應方程式：H2A(aq) + 2NaOH(aq) -> Na2A(aq) + 2H2O(l)。\n2. NaOH 摩爾數 = 0.12 mol/L * 0.030 L = 0.0036 mol。\n3. H2A 摩爾數為 NaOH 的一半 = 0.0018 mol。\n4. 二元酸的濃度 = 0.0018 mol / 0.015 L = 0.12 M。正確答案為 B。",
+        methodologyType = "General",
+        stepNotes = "1. 方程 H2A + 2NaOH -> Na2A + 2H2O\n2. mol(NaOH) = 0.0036, mol(H2A) = 0.0018\n3. 濃度 M = 0.0018 / 0.015 = 0.12 M",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=F5vEwMOfB9Y",
+        originalRef = "2022 DSE Chem Paper 1 Q16 改寫"
+      ),
+
+      // --- 2023 DSE ENGLISH ADAPTED ---
+      QuestionEntity(
+        id = "dse_2023_eng_q",
+        subject = "english",
+        topic = "Participle Clauses",
+        topicChinese = "寫作語法：分詞短語句首修飾與主被動主語一致",
+        difficulty = "Hard",
+        questionText = "Complete the sentence below to fulfill professional sentence variety in HKDSE Paper 2 writing: '________ by the unprecedented success of local startup hubs, the government decided to expand seed funding grants for youth initiatives.'",
+        optionA = "Encouraging",
+        optionB = "Encouraged",
+        optionC = "Having encouraged",
+        optionD = "Encourage",
+        correctAnswer = "B",
+        explanationHint = "Identify whether the main subject 'the government' is actively encouraging someone else or is passively being encouraged by the hub's success.",
+        explanationDetailed = "【DSE寫作升級套路：句首分詞短語的主被動，由後面的主語『the government』決定！】\n\n1. 邏輯主體是 'the government'。\n2. 政府是被本地創業中心的成功所『鼓舞』，因此為被動語意，用過去分詞 (Past Participle)。\n3. 故正確答案為 B (Encouraged)。",
+        methodologyType = "General",
+        stepNotes = "1. Identify clausal reduction rules around verbs of feeling\n2. Since subject 'the government' feels encouraged, choose passive participle Encouraged",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=nC8-F_b8wGs",
+        originalRef = "2023 DSE English Writing Grammatical Accuracy 改寫"
+      ),
+
+      // --- 2024 DSE MATHS ADAPTED ---
+      QuestionEntity(
+        id = "dse_2024_math_q",
+        subject = "math",
+        topic = "System of Inequalities",
+        topicChinese = "朝代圖案、線性規劃與不等式區域解答",
+        difficulty = "Medium",
+        questionText = "下列哪一個坐標點所在的區域滿足以下聯立不等式系統 (System of Inequalities)？\\(x + y \\ge 4\\), \\(2x - y \\le 6\\), \\(y \\ge 1\\)",
+        optionA = "(1, 1)",
+        optionB = "(3, 2)",
+        optionC = "(5, 1)",
+        optionD = "(2, 0)",
+        correctAnswer = "B",
+        explanationHint = "將各個選項的 x 和 y 坐標代入三個不等式，必須同時滿足三個不等式的坐標點才是正確答案。",
+        explanationDetailed = "【名師解讀：不等式滿足區域，最快最穩陣的方法，就是直接代入四個選項！】\n\n1. 測試 (1, 1)：1+1=2 ≱ 4 (不符合)。\n2. 測試 (3, 2)：3+2=5 ≥ 4 (合格); 2(3)-2 = 4 ≤ 6 (合格); 2 ≥ 1 (合格)。\n3. 測試 (5, 1)：2(5)-1 = 9 ≰ 6 (不符合)。\n故只有 B 同時完全滿足三個關係。正確答案為 B。",
+        methodologyType = "Condition Decomposition",
+        stepNotes = "1. 代入法依序檢查各點\n2. 證明 (3, 2) 完全符合，即可選取",
+        marks = 3,
+        youtubeUrl = "https://www.youtube.com/watch?v=F5vEwMOfB9Y",
+        originalRef = "2024 DSE Math Paper 2 Q22 改寫"
+      ),
+
+      // --- 2025 DSE PHYSICS ADAPTED ---
+      QuestionEntity(
+        id = "dse_2025_phys_q",
+        subject = "physics",
+        topic = "Faraday's and Lenz's Laws of Induction",
+        topicChinese = "電磁感應、楞次定律與感應電流方向",
+        difficulty = "Hard",
+        questionText = "一根條形磁鐵由高處垂直下落，其北極（N極）朝下垂直穿過一個水平固定在空中的圓形閉合銅環。從銅環上方往下看，在磁鐵穿入及穿出銅環的兩段運動過程中，銅環中的感應電流方向分別是如何？",
+        optionA = "先是逆時針，然後是順時針",
+        optionB = "先是順時針，然後是逆時針",
+        optionC = "全程維持逆時針方向",
+        optionD = "全程維持順時針方向",
+        correctAnswer = "A",
+        explanationHint = "根據楞次定律（Lenz's Law），感應電流產生的磁場必在抗阻磁通量的變化。利用右手定則（Right-hand Grip Rule）判斷流向。",
+        explanationDetailed = "【楞次定律抗拒變化：來拒去留！近就推開佢，走就吸引佢！】\n\n1. N極往下穿入時：向下磁通量增加，銅環頂部感應為N極排斥它。右手定則判定，逆時針 (Anti-clockwise) 電流。\n2. 磁鐵S極往下穿出時：向下磁通量減少，銅環頂部感應為N極（補充磁場/吸引它），電流方向此時為順時針 (Clockwise)。\n故正確答案為 A。",
+        methodologyType = "Rate of Change",
+        stepNotes = "1. N極進入頂部生N極抗阻：逆時針\n2. S極離開頂部生N極留助：順時針\n3. 結果：先逆時針，後順時針",
+        marks = 4,
+        youtubeUrl = "https://www.youtube.com/watch?v=nC8-F_b8wGs",
+        originalRef = "2025 DSE Physics Paper 1 Q16 改寫"
       )
     )
 
     database.dseDao().insertQuestions(list)
+  }
+
+  private suspend fun preloadPastPaperResources() {
+    val existing = database.dseDao().getAllPastPaperResourcesFlow().firstOrNull() ?: emptyList()
+    if (existing.isNotEmpty()) return
+
+    val resources = listOf(
+      PastPaperResourceEntity(
+        id = "2024_math_p1_lq",
+        year = "2024",
+        subject = "math",
+        paperType = "lq",
+        title = "2024 HKDSE Mathematics Compulsory Part Paper 1 (LQ)",
+        titleChinese = "2024 HKDSE 數學必修部分 卷一 (問答題)",
+        fileSize = "3.2 MB",
+        downloadCount = 12450,
+        syllabusKeypoints = "多項式、等比數列求和及應用、三維空間幾何、圓方程、坐報與二階平移等高頻大題全解。"
+      ),
+      PastPaperResourceEntity(
+        id = "2024_math_p2_mc",
+        year = "2024",
+        subject = "math",
+        paperType = "mc",
+        title = "2024 HKDSE Mathematics Compulsory Part Paper 2 (MC)",
+        titleChinese = "2024 HKDSE 數學必修部分 卷二 (選擇題)",
+        fileSize = "1.8 MB",
+        downloadCount = 14890,
+        syllabusKeypoints = "指數與對數圖形截距、十六進制運算、聯立不等式區域限界、三角比性質與條件機率。"
+      ),
+      PastPaperResourceEntity(
+        id = "2025_phys_p1_all",
+        year = "2025",
+        subject = "physics",
+        paperType = "lq",
+        title = "2025 HKDSE Physics Paper 1 (MC & LQ)",
+        titleChinese = "2025 HKDSE 物理科 卷一 (選擇題與問答題)",
+        fileSize = "4.5 MB",
+        downloadCount = 8240,
+        syllabusKeypoints = "力與運動、氣體動力學、熱傳導、波動與反射折射率、電磁感應楞次定律、放射性半衰期。"
+      ),
+      PastPaperResourceEntity(
+        id = "2025_chem_p1_all",
+        year = "2025",
+        subject = "chemistry",
+        paperType = "lq",
+        title = "2025 HKDSE Chemistry Paper 1 (MC & LQ)",
+        titleChinese = "2025 HKDSE 化學科 卷一 (選擇題與問答題)",
+        fileSize = "4.1 MB",
+        downloadCount = 7930,
+        syllabusKeypoints = "微觀世界與化學鍵、金屬與酸鹼度、電化學電池及電解、碳化合物命名、化學反應速率。"
+      ),
+      PastPaperResourceEntity(
+        id = "2023_eng_p1_read",
+        year = "2023",
+        subject = "english",
+        paperType = "lq",
+        title = "2023 HKDSE English Language Paper 1 (Reading)",
+        titleChinese = "2023 HKDSE 英國語文 卷一 (閱讀理解資訊)",
+        fileSize = "2.3 MB",
+        downloadCount = 11200,
+        syllabusKeypoints = "Part A Core theme, Part B1 & B2 advanced synonyms, inference cues, cohesion and text structures."
+      ),
+      PastPaperResourceEntity(
+        id = "2023_eng_p2_write",
+        year = "2023",
+        subject = "english",
+        paperType = "lq",
+        title = "2023 HKDSE English Language Paper 2 (Writing)",
+        titleChinese = "2023 HKDSE 英國語文 卷二 (寫作能力)",
+        fileSize = "1.2 MB",
+        downloadCount = 10560,
+        syllabusKeypoints = "Professional sentence variety, grammatical accuracy, cohesion connectives, content-rich formatting."
+      ),
+      PastPaperResourceEntity(
+        id = "2022_chin_p1_read",
+        year = "2022",
+        subject = "chinese",
+        paperType = "lq",
+        title = "2022 HKDSE Chinese Language Paper 1 (Reading)",
+        titleChinese = "2022 HKDSE 中國語文 卷一 (閱讀理解)",
+        fileSize = "2.8 MB",
+        downloadCount = 9800,
+        syllabusKeypoints = "白話散文象徵意蘊、文言文詞語對譯、實詞推斷與句式結構、課外思想對比分析。"
+      ),
+      PastPaperResourceEntity(
+        id = "2022_chin_p2_write",
+        year = "2022",
+        subject = "chinese",
+        paperType = "lq",
+        title = "2022 HKDSE Chinese Language Paper 2 (Writing)",
+        titleChinese = "2022 HKDSE 中國語文 卷二 (寫作能力)",
+        fileSize = "1.1 MB",
+        downloadCount = 9310,
+        syllabusKeypoints = "論說文三要素結構、記敍抒情文情感線索與物象鋪墊，關鍵立意與深刻思考表達。"
+      ),
+      PastPaperResourceEntity(
+        id = "2021_bio_p1_all",
+        year = "2021",
+        subject = "biology",
+        paperType = "lq",
+        title = "2021 HKDSE Biology Paper 1 (MC & LQ)",
+        titleChinese = "2021 HKDSE 生物科 卷一 (選擇題與問答題)",
+        fileSize = "3.9 MB",
+        downloadCount = 6540,
+        syllabusKeypoints = "生命化學分子、遺傳與DNA密碼、人類生理學、光合與細胞呼吸、生態系統及群落結構。"
+      ),
+      PastPaperResourceEntity(
+        id = "2020_math_p1_lq",
+        year = "2020",
+        subject = "math",
+        paperType = "lq",
+        title = "2020 HKDSE Mathematics Compulsory Part Paper 1 (LQ)",
+        titleChinese = "2020 HKDSE 數學必修部分 卷一 (問答題)",
+        fileSize = "3.0 MB",
+        downloadCount = 11050,
+        syllabusKeypoints = "二次方程頂點平移、等差等比數列複合求和、幾何立體折疊難題、直綫截距與圓切點軌跡。"
+      ),
+      PastPaperResourceEntity(
+        id = "2020_math_p2_mc",
+        year = "2020",
+        subject = "math",
+        paperType = "mc",
+        title = "2020 HKDSE Mathematics Compulsory Part Paper 2 (MC)",
+        titleChinese = "2020 HKDSE 數學必修部分 卷二 (選擇題)",
+        fileSize = "1.7 MB",
+        downloadCount = 11980,
+        syllabusKeypoints = "指數與對數坐標方程、複數性質運算、圓圖幾何性質、三角形心特性與條件概率計算。"
+      ),
+      PastPaperResourceEntity(
+        id = "2019_chem_p1_all",
+        year = "2019",
+        subject = "chemistry",
+        paperType = "lq",
+        title = "2019 HKDSE Chemistry Paper 1 (MC & LQ)",
+        titleChinese = "2019 HKDSE 化學科 卷一 (選擇題與問答題)",
+        fileSize = "3.8 MB",
+        downloadCount = 7120,
+        syllabusKeypoints = "酸鹼中和滴定、限量反應物探討、化學反應平衡Kc、工業硝酸製程及速率平衡探討。"
+      ),
+      PastPaperResourceEntity(
+        id = "2018_phys_p1_all",
+        year = "2018",
+        subject = "physics",
+        paperType = "lq",
+        title = "2018 HKDSE Physics Paper 1 (MC & LQ)",
+        titleChinese = "2018 HKDSE 物理科 卷一 (選擇題與問答題)",
+        fileSize = "4.0 MB",
+        downloadCount = 6880,
+        syllabusKeypoints = "萬有引力、軌道力學軌跡、牛頓運動定律、摩擦力作功、熱容量混合法及透鏡成像性質。"
+      ),
+      PastPaperResourceEntity(
+        id = "2017_eng_p3_listening",
+        year = "2017",
+        subject = "english",
+        paperType = "listening",
+        title = "2017 HKDSE English Language Paper 3 (Listening)",
+        titleChinese = "2017 HKDSE 英國語文 卷三 (聆聽及綜合能力)",
+        fileSize = "5.2 MB",
+        downloadCount = 12500,
+        syllabusKeypoints = "Shorthand techniques, summary writing, email register conversion, formal letter structured formatting."
+      ),
+      PastPaperResourceEntity(
+        id = "2016_math_p2_mc",
+        year = "2016",
+        subject = "math",
+        paperType = "mc",
+        title = "2016 HKDSE Mathematics Compulsory Part Paper 2 (MC)",
+        titleChinese = "2016 HKDSE 數學必修部分 卷二 (選擇題)",
+        fileSize = "1.6 MB",
+        downloadCount = 10400,
+        syllabusKeypoints = "多項式餘數定理、因式分解配線、二次圖形變化、三角函數極值、立體截面面積計量。"
+      ),
+      PastPaperResourceEntity(
+        id = "2012_math_p1_lq",
+        year = "2012",
+        subject = "math",
+        paperType = "lq",
+        title = "2012 HKDSE Mathematics Compulsory Part Paper 1 (LQ)",
+        titleChinese = "2012 HKDSE 數學必修部分 卷一 (問答題)",
+        fileSize = "3.1 MB",
+        downloadCount = 13200,
+        syllabusKeypoints = "首屆DSE元祖。聯立方程式、二元不等式平面、圓方程及圓心垂直距離切線、餘數定理全解。"
+      )
+    )
+
+    database.dseDao().insertPastPaperResources(resources)
   }
 }
 

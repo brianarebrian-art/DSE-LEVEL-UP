@@ -67,4 +67,14 @@ interface DseDao {
 
   @Query("DELETE FROM unlocked_badges")
   suspend fun clearBadges()
+
+  // Past Paper Resources
+  @Query("SELECT * FROM past_paper_resources ORDER BY year DESC, titleChinese ASC")
+  fun getAllPastPaperResourcesFlow(): Flow<List<PastPaperResourceEntity>>
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertPastPaperResources(resources: List<PastPaperResourceEntity>)
+
+  @Query("UPDATE past_paper_resources SET isDownloaded = :isDownloaded, localFilePath = :localFilePath, downloadCount = :downloadCount WHERE id = :id")
+  suspend fun updatePastPaperDownloadStatus(id: String, isDownloaded: Boolean, localFilePath: String?, downloadCount: Int)
 }

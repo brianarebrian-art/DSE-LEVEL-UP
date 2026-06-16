@@ -42,9 +42,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.example.database.BadgeEntity
 import com.example.database.MistakeEntity
 import com.example.database.QuestionEntity
+import com.example.database.PastPaperResourceEntity
 import com.example.viewmodel.DseViewModel
 import com.example.viewmodel.GradeForecast
 import kotlinx.coroutines.delay
@@ -1956,6 +1960,7 @@ fun BankScreen(viewModel: DseViewModel) {
 
   // Collapsible Methodology dialog control
   var showMethodologyDialog by remember { mutableStateOf(false) }
+  var selectedTabIdx by remember { mutableStateOf(0) }
 
   val subjectsList = listOf(
     "all" to "🌐 所有科目",
@@ -1997,16 +2002,36 @@ fun BankScreen(viewModel: DseViewModel) {
     verticalArrangement = Arrangement.spacedBy(10.dp)
   ) {
     Text(
-      "📚 DSE 考評局改寫與模擬題庫",
+      "📚 HKDSE 試題智庫與下載中心",
       fontWeight = FontWeight.Black,
       fontSize = 20.sp,
       color = MaterialTheme.colorScheme.primary
     )
-    Text(
-      "提供完美的題目答案解析與詳細解題步驟（Step Notes）。按學科與年份精緻分類，助同學徹底攻略邏輯！",
-      fontSize = 12.sp,
-      color = Color.Gray
-    )
+
+    TabRow(
+      selectedTabIndex = selectedTabIdx,
+      containerColor = Color.Transparent,
+      contentColor = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp)
+    ) {
+      Tab(
+        selected = selectedTabIdx == 0,
+        onClick = { selectedTabIdx = 0 },
+        text = { Text("🧩 題型思維改寫", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+      )
+      Tab(
+        selected = selectedTabIdx == 1,
+        onClick = { selectedTabIdx = 1 },
+        text = { Text("📥 歷屆試卷下載", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
+      )
+    }
+
+    if (selectedTabIdx == 0) {
+      Text(
+        "提供完美的題目答案解析與詳細解題步驟（Step Notes）。按學科與年份精緻分類，助同學徹底攻略邏輯！",
+        fontSize = 12.sp,
+        color = Color.Gray
+      )
 
     // Expandable Methodology Guideline shortcut
     Card(
@@ -2208,7 +2233,10 @@ fun BankScreen(viewModel: DseViewModel) {
         }
       }
     }
+  } else {
+    PastPaperDownloadSection(viewModel = viewModel)
   }
+}
 
   // Methodology Dialog
   if (showMethodologyDialog) {
@@ -2289,6 +2317,386 @@ data class MethodologyItem(
   val official: String,
   val rewritten: String
 )
+
+@Composable
+fun PastPaperDownloadSection(viewModel: DseViewModel) {
+  val pastPapers by viewModel.allPastPaperResources.collectAsStateWithLifecycle()
+  val progresses by viewModel.downloadProgress.collectAsStateWithLifecycle()
+  
+  var searchKeyword by remember { mutableStateOf("") }
+  var selectedSubjectFilter by remember { mutableStateOf("all") }
+  var selectedYearFilter by remember { mutableStateOf("all") }
+  var selectedTypeFilter by remember { mutableStateOf("all") }
+
+  // Dialog to preview paper details
+  var previewPaper by remember { mutableStateOf<PastPaperResourceEntity?>(null) }
+
+  val subjectsList = listOf(
+    "all" to "🌐 全部",
+    "chinese" to "🇨🇳 中文",
+    "english" to "🇬🇧 英文",
+    "math" to "📐 數學",
+    "physics" to "⚡ 物理",
+    "chemistry" to "🧪 化學",
+    "biology" to "🧬 生物"
+  )
+
+  val yearsList = listOf("all" to "📅 全部") + (2012..2025).reversed().map { it.toString() to "${it}年" }.filter { y ->
+    y.first == "2025" || y.first == "2024" || y.first == "2023" || y.first == "2022" || y.first == "2021" || y.first == "2020" || y.first == "2019" || y.first == "2018" || y.first == "2017" || y.first == "2016" || y.first == "2012"
+  }
+
+  val typesList = listOf(
+    "all" to "📄 全部類型",
+    "mc" to "🟢 選擇題",
+    "lq" to "🔵 問答題",
+    "listening" to "🟣 聆聽綜合"
+  )
+
+  // Filtering Logic
+  val filteredPapers = pastPapers.filter { paper ->
+    val matchSubject = selectedSubjectFilter == "all" || paper.subject == selectedSubjectFilter
+    val matchYear = selectedYearFilter == "all" || paper.year == selectedYearFilter
+    val matchType = selectedTypeFilter == "all" || paper.paperType == selectedTypeFilter
+    val matchSearch = searchKeyword.isEmpty() ||
+        paper.title.contains(searchKeyword, ignoreCase = true) ||
+        paper.titleChinese.contains(searchKeyword, ignoreCase = true) ||
+        paper.syllabusKeypoints.contains(searchKeyword, ignoreCase = true)
+
+    matchSubject && matchYear && matchType && matchSearch
+  }
+
+  Column(
+    modifier = Modifier.fillMaxSize(),
+    verticalArrangement = Arrangement.spacedBy(10.dp)
+  ) {
+    // 1. Search Bar
+    OutlinedTextField(
+      value = searchKeyword,
+      onValueChange = { searchKeyword = it },
+      placeholder = { Text("搜尋歷屆試卷標題、考點考綱重點...") },
+      modifier = Modifier.fillMaxWidth(),
+      leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = "Search Papers") },
+      shape = RoundedCornerShape(12.dp)
+    )
+
+    // 2. Filters Row with horizontal scrolls
+    Text("學科篩選：", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+    LazyRow(
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      modifier = Modifier.fillMaxWidth()
+    ) {
+      items(subjectsList) { (key, label) ->
+        FilterChip(
+          selected = selectedSubjectFilter == key,
+          onClick = { selectedSubjectFilter = key },
+          label = { Text(label, fontSize = 11.sp) }
+        )
+      }
+    }
+
+    Text("年份與類型：", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+      LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.weight(1f)
+      ) {
+        items(yearsList) { (key, label) ->
+          FilterChip(
+            selected = selectedYearFilter == key,
+            onClick = { selectedYearFilter = key },
+            label = { Text(label, fontSize = 11.sp) }
+          )
+        }
+      }
+    }
+
+    LazyRow(
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+      modifier = Modifier.fillMaxWidth()
+    ) {
+      items(typesList) { (key, label) ->
+        FilterChip(
+          selected = selectedTypeFilter == key,
+          onClick = { selectedTypeFilter = key },
+          label = { Text(label, fontSize = 11.sp) }
+        )
+      }
+    }
+
+    Text(
+      "文憑試資源：共計 ${filteredPapers.size} 份高頻原題與詳解",
+      fontSize = 11.sp,
+      fontWeight = FontWeight.Bold,
+      color = Color.Gray
+    )
+
+    if (filteredPapers.isEmpty()) {
+      Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+        Text("沒有匹配的試卷資源 📂", fontSize = 12.sp, color = Color.Gray)
+      }
+    } else {
+      LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.weight(1f).fillMaxWidth()
+      ) {
+        items(filteredPapers) { paper ->
+          val progress = progresses[paper.id]
+          val isDownloaded = paper.isDownloaded
+
+          Card(
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+              ) {
+                Column(modifier = Modifier.weight(1f)) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    val subjectColor = when(paper.subject) {
+                      "chinese" -> Color(0xFFE57373)
+                      "english" -> Color(0xFF64B5F6)
+                      "math" -> Color(0xFF81C784)
+                      "physics" -> Color(0xFFFFD54F)
+                      "chemistry" -> Color(0xFFBA68C8)
+                      else -> Color(0xFF4DB6AC)
+                    }
+                    Box(
+                      modifier = Modifier
+                        .background(subjectColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                      Text(
+                        text = paper.year + " DSE",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = subjectColor
+                      )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                      text = when(paper.paperType) {
+                        "mc" -> "卷二 選擇題"
+                        "lq" -> "卷一 甲乙部問答"
+                        else -> "卷三 聆聽及綜合"
+                      },
+                      fontSize = 10.sp,
+                      color = Color.DarkGray,
+                      fontWeight = FontWeight.SemiBold
+                    )
+                  }
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = paper.titleChinese,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                  )
+                  Text(
+                    text = paper.title,
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                  )
+                }
+                Text(
+                  text = paper.fileSize,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.primary
+                )
+              }
+
+              Spacer(modifier = Modifier.height(6.dp))
+              Text(
+                text = "📚 核心要點：${paper.syllabusKeypoints}",
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = Color.DarkGray,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+              )
+
+              Spacer(modifier = Modifier.height(10.dp))
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Text(
+                  text = "🔥 已被下載 ${paper.downloadCount} 次",
+                  fontSize = 11.sp,
+                  color = Color.Gray
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  if (isDownloaded) {
+                    Button(
+                      onClick = { previewPaper = paper },
+                      colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                      modifier = Modifier.height(36.dp)
+                    ) {
+                      Icon(imageVector = Icons.Default.Visibility, contentDescription = "View", modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text("開啟/預覽", fontSize = 11.sp)
+                    }
+                  } else if (progress != null) {
+                    Column(horizontalAlignment = Alignment.End) {
+                      LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.width(100.dp).clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.primaryContainer
+                      )
+                      Text(
+                        text = "正在下載 ${(progress * 100).toInt()}%",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                      )
+                    }
+                  } else {
+                    Button(
+                      onClick = { viewModel.downloadPastPaper(paper.id) },
+                      contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                      modifier = Modifier.height(36.dp)
+                    ) {
+                      Icon(imageVector = Icons.Default.Download, contentDescription = "Download", modifier = Modifier.size(16.dp))
+                      Spacer(modifier = Modifier.width(4.dp))
+                      Text("下載試題紙", fontSize = 11.sp)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Preview Dialog for downloaded paper
+  if (previewPaper != null) {
+    val paper = previewPaper!!
+    Dialog(onDismissRequest = { previewPaper = null }) {
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier.fillMaxWidth().heightIn(max = 500.dp)
+      ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              "📄 試卷原件閱讀與考點導航",
+              fontWeight = FontWeight.Black,
+              fontSize = 16.sp,
+              color = MaterialTheme.colorScheme.primary
+            )
+            IconButton(onClick = { previewPaper = null }) {
+              Icon(imageVector = Icons.Default.Close, contentDescription = "Close Dialog")
+            }
+          }
+          HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+          LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.weight(1f)
+          ) {
+            item {
+              Text(
+                text = "${paper.year} HKDSE ${paper.titleChinese}",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurface
+              )
+              Spacer(modifier = Modifier.height(4.dp))
+              Text(
+                text = "儲存路徑: ${paper.localFilePath}",
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                color = Color.DarkGray
+              )
+            }
+
+            item {
+              Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                  Text("🧠 考評大綱高頻突破重點 (Syllabus Keypoints)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = "本試卷原卷共有對應必備思維框架。點擊下方「去學科挑戰」可在『錯題本』與『學科挑戰』加載同等難度、同等邏輯的改寫模擬題，實踐極致爆分：\n\n• ${paper.syllabusKeypoints}",
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                  )
+                }
+              }
+            }
+
+            item {
+              Card(
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                  Text("💡 官方 Marking Scheme 核心扣分陷阱", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                  Spacer(modifier = Modifier.height(6.dp))
+                  val traps = when (paper.subject) {
+                    "math" -> """
+                      1. 在 Conventional 卷一中，題目若提及「求解 P(x) 的係數」，千萬不要遺漏代入餘數為零的正負號，否則直接扣 1 分步驟分（M1 標籤落空）。
+                      2. 三維空間幾何幾何題，若找不到線面角（Angle between Line and Plane）的真正射影點，嚴禁直接寫出餘弦定理，必須在第一步描述投影三角形。
+                    """.trimIndent()
+                    "physics" -> """
+                      1. 關於冷次定律（Lenz's Law）的定性解釋題，描述電流方向時必須先指明大腦視角：「從頂部向下看」或「正面看」，否則閱卷官無法判定順/逆時針，直接扣分！
+                      2. 計算折射臨界角時，注意介質與空氣的順序，折射係數較大的介質內才是臨界角。
+                    """.trimIndent()
+                    "chemistry" -> """
+                      1. 書寫碳化合物 (Carbon Compounds) 結構式時，碳原子上的 H 如果省略了連線 (即寫成 C-H) 會有扣分風險，務必畫出完整的滿價結構。
+                      2. 滴定反應中，指出限量反應物必須附帶摩爾比計算過程。
+                    """.trimIndent()
+                    "english" -> """
+                      1. 在 Paper 2 寫作中，濫用 but/however 會被視為語意連貫性弱。試著替換成 Notwithstanding / On the flip side。
+                      2. 注意 Subject-Verb Agreement 尤其是 non-finite clausal modifiers。
+                    """.trimIndent()
+                    "chinese" -> """
+                      1. 閱讀理解中，闡述「修辭手法作用」時，不能只寫「生動形象」，必須緊扣原文描述對象的特徵及作者寄託的深層情感。
+                      2. 文言實詞翻譯，必須考慮一詞多義及古今異義。
+                    """.trimIndent()
+                    else -> """
+                      1. 請實地遵循文憑試官方 Marking Scheme 解析要求。
+                      2. 練習底層思維框架，切勿死記答案。
+                    """.trimIndent()
+                  }
+                  Text(text = traps, fontSize = 11.sp, lineHeight = 16.sp, color = Color.DarkGray)
+                }
+              }
+            }
+          }
+
+          Spacer(modifier = Modifier.height(10.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+          ) {
+            OutlinedButton(onClick = { previewPaper = null }) {
+              Text("關閉", fontSize = 12.sp)
+            }
+          }
+        }
+      }
+    }
+  }
+}
 
 // --- SCREEN 3: PRACTICE CHALLENGE_PAGE ---
 @OptIn(ExperimentalAnimationApi::class)
@@ -3658,127 +4066,6 @@ fun MistakesScreen(
                     )
                   }
                 }
-
-                // Star Explanation / Strategy section (always shown when expanded for complete guidance!)
-                Spacer(modifier = Modifier.height(12.dp))
-                Card(
-                  colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
-                  ),
-                  border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                  modifier = Modifier.fillMaxWidth()
-                ) {
-                  Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                      "⭐ 閱卷星級解題錦囊 (Marking Scheme & Guide):",
-                      fontSize = 11.sp,
-                      fontWeight = FontWeight.Black,
-                      color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                      question.explanationDetailed,
-                      fontSize = 12.sp,
-                      lineHeight = 16.sp,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                      "💡 核心思路：${question.explanationHint}",
-                      fontSize = 11.sp,
-                      fontWeight = FontWeight.Bold,
-                      color = Color.DarkGray
-                    )
-
-                    // Video Walkthrough & Outbound links!
-                    if (question.youtubeUrl.isNotEmpty()) {
-                      Spacer(modifier = Modifier.height(10.dp))
-                      val uriHandler1 = androidx.compose.ui.platform.LocalUriHandler.current
-                      Row(
-                        modifier = Modifier
-                          .fillMaxWidth()
-                          .clickable {
-                            try {
-                              uriHandler1.openUri(question.youtubeUrl)
-                            } catch (e: Exception) {
-                            }
-                          }
-                          .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                      ) {
-                        Icon(
-                          imageVector = Icons.Default.PlayCircle,
-                          contentDescription = "Watch helper",
-                          tint = Color.Red,
-                          modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                          "Herman Yeung 真題對照考點剖析 📺",
-                          fontSize = 11.sp,
-                          fontWeight = FontWeight.Bold,
-                          color = Color.Red,
-                          textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
-                        )
-                      }
-                    }
-                  }
-                }
-              }
-
-              // Card Bottom actions bar (Expand toggle and Delete/Challenger)
-              Spacer(modifier = Modifier.height(12.dp))
-              Divider(color = Color.LightGray.copy(alpha = 0.15f), thickness = 1.dp)
-              Spacer(modifier = Modifier.height(8.dp))
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                // Expand / Collapse details trigger
-                TextButton(
-                  onClick = {
-                    if (isExpanded) {
-                      expandedQuestionId.value = null
-                    } else {
-                      expandedQuestionId.value = mistake.questionId
-                    }
-                  },
-                  modifier = Modifier.testTag("expand_toggle_btn_${mistake.questionId}"),
-                  contentPadding = PaddingValues(0.dp)
-                ) {
-                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(
-                      imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                      contentDescription = "Toggle Expand",
-                      modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                      if (isExpanded) "收起複習面板" else "📖 即時複習 / 重新挑戰題目",
-                      fontSize = 12.sp,
-                      fontWeight = FontWeight.Bold
-                    )
-                  }
-                }
-
-                // Delete raw record trigger
-                OutlinedButton(
-                  onClick = {
-                    scope.launch { viewModel.deleteMistakeRecord(mistake.questionId) }
-                  },
-                  colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Gray),
-                  border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray),
-                  modifier = Modifier
-                    .height(32.dp)
-                    .testTag("delete_mistake_btn_${mistake.questionId}"),
-                  contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                ) {
-                  Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete record", modifier = Modifier.size(12.dp))
-                  Spacer(modifier = Modifier.width(4.dp))
-                  Text("我知道錯了 (刪除)", fontSize = 10.sp)
-                }
               }
             }
           }
@@ -3788,174 +4075,75 @@ fun MistakesScreen(
   }
 }
 
-private fun reasonDescription(tag: String): String = when(tag) {
-  "Carelessness" -> "粗心大意 (概念會但手誤)"
-  "Concept Gap" -> "概念不清 (理解有盲點)"
-  "Calculation Error" -> "計算出錯 (公式套錯或算錯)"
-  "Time Pressure" -> "時間不足 (限時內未能解答)"
-  else -> "未指定盲點"
-}
-
-// --- SCREEN 5: LEADERBOARD SCREEN ---
-@Composable
-fun LeaderboardScreen(userPoints: Int) {
-  val mockLeaderboard = listOf(
-    LeaderboardLeader("1", "沙田區 DSE 神探", "Level 5**", 1320, true),
-    LeaderboardLeader("2", "屯門拔尖狂魔", "Level 5**", 1190, false),
-    LeaderboardLeader("3", "喇沙溫書戰士", "Level 5*", 980, false),
-    LeaderboardLeader("4", "你 (今日最勤奮)", "Level 5", userPoints, false),
-    LeaderboardLeader("5", "協恩自修公主", "Level 4", 620, false),
-    LeaderboardLeader("6", "九龍塘狀元", "Level 4", 450, false)
-  ).sortedByDescending { it.points }
-
-  Column(
-    modifier = Modifier
-      .fillMaxSize()
-      .padding(16.dp)
-  ) {
-    Text(
-      "👑 匿名榜單戰績",
-      fontSize = 20.sp,
-      fontWeight = FontWeight.Black,
-      color = MaterialTheme.colorScheme.primary
-    )
-    Text(
-      "同屆有 ${mockLeaderboard.size * 34 + 12} 位 2026 考生在這裏瘋狂操卷，你並不孤單！",
-      fontSize = 12.sp,
-      color = Color.Gray
-    )
-    Spacer(modifier = Modifier.height(16.dp))
-
-    LazyColumn(
-      modifier = Modifier.fillMaxWidth(),
-      verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-      items(mockLeaderboard) { leader ->
-        val isSelf = leader.name.startsWith("你")
-        val containerColor = if (isSelf) {
-          MaterialTheme.colorScheme.primaryContainer
-        } else {
-          MaterialTheme.colorScheme.surface
-        }
-
-        Card(
-          colors = CardDefaults.cardColors(containerColor = containerColor),
-          modifier = Modifier.fillMaxWidth()
-        ) {
-          Row(
-            modifier = Modifier
-              .padding(16.dp)
-              .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-          ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Box(
-                modifier = Modifier
-                  .size(32.dp)
-                  .background(
-                    color = when (leader.rank) {
-                      "1" -> Color(0xFFFFD700)
-                      "2" -> Color(0xFFC0C0C0)
-                      "3" -> Color(0xFFCD7F32)
-                      else -> MaterialTheme.colorScheme.outlineVariant
-                    },
-                    shape = CircleShape
-                  ),
-                contentAlignment = Alignment.Center
-              ) {
-                Text(
-                  leader.rank,
-                  fontWeight = FontWeight.Black,
-                  fontSize = 14.sp,
-                  color = Color.White
-                )
-              }
-              Spacer(modifier = Modifier.width(12.dp))
-              Column {
-                Text(leader.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text("預估考位: ${leader.gradeTarget}", fontSize = 11.sp, color = Color.Gray)
-              }
-            }
-
-            Text(
-              "${leader.points} XP分",
-              fontWeight = FontWeight.Black,
-              fontSize = 16.sp,
-              color = MaterialTheme.colorScheme.primary
-            )
-          }
-        }
-      }
-    }
-  }
-}
-
-data class LeaderboardLeader(
-  val rank: String,
-  val name: String,
-  val gradeTarget: String,
-  val points: Int,
-  val specialBadge: Boolean
-)
-
-// --- SCREEN 5: REVISION SCREEN (個人化學習計劃、應試資訊與應試指南) ---
 @Composable
 fun RevisionScreen() {
-  var selectedSubTab by remember { mutableStateOf(0) }
+    var selectedSubTab by remember { mutableStateOf(0) }
+    var targetSubjectsState by remember { mutableStateOf(setOf("math", "physics", "chemistry", "english")) }
+    var daysRemainingState by remember { mutableStateOf(100f) }
+    var reviewRemindersEnabled by remember { mutableStateOf(true) }
+    var completedPlanItemsState by remember { mutableStateOf(setOf<String>()) }
 
-  // States for study plans
-  val initialSubjects = setOf("math", "physics", "chemistry", "english")
-  var targetSubjectsState by remember { mutableStateOf(initialSubjects) }
-  var daysRemainingState by remember { mutableStateOf(45f) } // Default DSE count downs
-  var reviewRemindersEnabled by remember { mutableStateOf(true) }
-  var completedPlanItemsState by remember { mutableStateOf(setOf<String>()) }
-
-  Column(
-    modifier = Modifier
-      .fillMaxSize()
-      .padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(10.dp)
-  ) {
-    Text(
-      "📅 HKDSE 考情分組、智能學習計劃與指南",
-      fontWeight = FontWeight.Black,
-      fontSize = 18.sp,
-      color = MaterialTheme.colorScheme.primary
-    )
-    Text(
-      "首創依據 P0-P4 選科優先度、考量目標考纲與倒計天數，為考生量身打造每日黃金時間分配方案。",
-      fontSize = 11.sp,
-      color = Color.Gray,
-      lineHeight = 14.sp
+    // Balanced responsive horizontal tabs - Scrollable Row
+    val tabs = listOf(
+      "📅 學習計劃",
+      "⏱️ 考場戰策",
+      "🧮 計算機神程",
+      "👥 自修生逆襲",
+      "🏫 教師專區"
     )
 
-    // Balanced responsive horizontal tabs
-    val tabs = listOf("📅 學習計劃", "📢 考情發佈", "📚 狀元溫習術", "⏳ 考場時間術")
-    Row(
-      modifier = Modifier.fillMaxWidth().testTag("revision_tab_row"),
-      horizontalArrangement = Arrangement.spacedBy(4.dp)
+    // States for Calculator Simulator
+    var selectedCalcProg by remember { mutableStateOf(0) }
+    var calcInputA by remember { mutableStateOf("") }
+    var calcInputB by remember { mutableStateOf("") }
+    var calcInputC by remember { mutableStateOf("") }
+    var calcInputD by remember { mutableStateOf("") }
+    var calcInputE by remember { mutableStateOf("") }
+    var calcInputF by remember { mutableStateOf("") }
+    var calcOutputMain by remember { mutableStateOf("0.") }
+    var calcOutputSub by remember { mutableStateOf("CASIO fx-3650P II READY") }
+
+    // States for Private Candidate District Selector
+    var selectedDistrict by remember { mutableStateOf("all") }
+
+    // States for Teacher Worksheet Generator
+    var selectedWorksheetSubject by remember { mutableStateOf("math") }
+    var selectedWorksheetCount by remember { mutableStateOf(3) }
+    var worksheetGeneratedText by remember { mutableStateOf("") }
+    var worksheetGeneratedScheme by remember { mutableStateOf("") }
+    var worksheetGeneratedShow by remember { mutableStateOf(false) }
+    var feedbackCopiedMsg by remember { mutableStateOf(false) }
+
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+
+    Column(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-      tabs.forEachIndexed { idx, title ->
+      LazyRow(
+      modifier = Modifier.fillMaxWidth().testTag("revision_tab_row"),
+      horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+      itemsIndexed(tabs) { idx, title ->
         val selected = selectedSubTab == idx
         Card(
           colors = CardDefaults.cardColors(
             containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
           ),
           modifier = Modifier
-            .weight(1f)
             .clickable { selectedSubTab = idx }
             .testTag("revision_tab_$idx")
         ) {
           Box(
             modifier = Modifier
-              .padding(vertical = 8.dp)
-              .fillMaxWidth(),
+              .padding(horizontal = 12.dp, vertical = 8.dp),
             contentAlignment = Alignment.Center
           ) {
             Text(
-              title,
-              fontSize = 10.sp,
+              text = title,
+              fontSize = 11.sp,
               fontWeight = FontWeight.Bold,
               color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -4238,22 +4426,23 @@ fun RevisionScreen() {
           }
         }
 
-        1 -> { // Exam Bulletins (indexes shifted by 1)
+        1 -> { // ⏱️ 考場戰策 (Bulletins & 3-Pass Strategy combined and fixed)
           item {
-            Text("📢 DSE 官方最新日程與考綱發佈", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
+            Text("📢 DSE 最新日程、考綱與極致 3-Pass 答題戰略", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
           }
+
           item {
             Card(modifier = Modifier.fillMaxWidth()) {
               Column(modifier = Modifier.padding(12.dp)) {
-                Text("📅 2026 核心科目考試日程表", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                Text("📅 DSE 核心科目黃金考試日程表", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.height(8.dp))
                 val schedule = listOf(
-                  "4月9日 (四)" to "🇬🇧 英國語文 (紙一/紙二 閱讀與寫作)",
-                  "4月10日 (五)" to "🇬🇧 英國語文 (紙三 聆聽與綜合)",
-                  "4月13日 (一)" to "📐 數學必修部分 (紙一/紙二)",
-                  "4月15日 (三)" to "🇨🇳 中國語文 (核心考驗)",
-                  "4月17日 (五)" to "⚡ 物理科 (選修挑戰)",
-                  "4月20日 (一)" to "🧪 化學科 (選修挑戰)"
+                  "4月9日" to "🇬🇧 英國語文 (紙一閱讀 / 紙二寫作)",
+                  "4月10日" to "🇬🇧 英國語文 (紙三聆聽與綜合能力)",
+                  "4月13日" to "📐 數學必修部分 (卷一問答 / 卷二選擇題)",
+                  "4月15日" to "🇨🇳 中國語文 (卷一閱讀體系 / 卷二寫作)",
+                  "4月17日" to "⚡ 物理科 (選修專項理論突破)",
+                  "4月20日" to "🧪 化學科 (選修考點高度改寫)"
                 )
                 schedule.forEach { (date, subject) ->
                   Row(
@@ -4267,6 +4456,25 @@ fun RevisionScreen() {
               }
             }
           }
+
+          item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+              Column(modifier = Modifier.padding(12.dp)) {
+                Text("🎯 考場神話：DSE 選擇題 (MC) 3-Pass 操卷術", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                  "DSE MC 卷限時極度緊迫，切忌遇到難題便卡死。請嚴格執行 3-Pass 策略：\n\n" +
+                  "• 1st Pass (秒殺題)：只做一看便知算法的送分題與基本概念題。手算/計數機秒出答案。一旦需要思考多於 15 秒，立即標記、跳過。這能確保基本盤的分數安妥入袋。\n\n" +
+                  "• 2nd Pass (邏輯常規題)：此時心態放鬆、基本分已穩。重回標記題目，攻克具有中度運算與轉換的常規大題，每題限時 90 秒解答。\n\n" +
+                  "• 3rd Pass (高難/壓軸題)：最後 10 分鐘，將精力投注於高難度或需要大運算量的壓軸幾何/二次分析題，善用計算機內置「神程」或代入法衝刺。",
+                  fontSize = 11.sp,
+                  lineHeight = 15.sp,
+                  color = Color.DarkGray
+                )
+              }
+            }
+          }
+
           item {
             Card(modifier = Modifier.fillMaxWidth()) {
               Column(modifier = Modifier.padding(12.dp)) {
@@ -4274,25 +4482,9 @@ fun RevisionScreen() {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                   "1. 准考證核對：准考證一般於2月下旬發放，務必核對個人姓名、應考科目及試場編號。\n" +
-                    "2. 身份證明：應試當天必須攜帶有效香港身份證正本，以及官方准考證正本入閘。平板或電子身份證恕不接納。\n" +
-                    "3. 收音機檢查：應考英文科紙三聆聽時，須自備合格收音機及耳機，並確保電池充足、調頻(FM)正常運作。試場不提供額外收音設備。\n" +
-                    "4. 計算機標籤：數學/理科應試計算機背面必須具備官方「H.K.E.A.A. APPROVED」紅色印刷或綠色標籤，否則不可帶入考場。",
-                  fontSize = 11.sp,
-                  lineHeight = 15.sp,
-                  color = Color.DarkGray
-                )
-              }
-            }
-          }
-          item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-              Column(modifier = Modifier.padding(12.dp)) {
-                Text("📑 主要學科最新考綱更新", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                  "• 📐 數學必修：近年題型加大了二次方程平移、圓的方程在動點軌跡中與截距的綜合考察，減少了純幾何幾何證明的比重。\n" +
-                    "• 🇬🇧 英文科：寫作部分更重思維的多角度切入，不再僅看詞彙深奧度，對邏輯連貫性（Cohesion）要求顯著提高。\n" +
-                    "• ⚡ 物理科：加強了電磁感應（EMI）與放射性半衰期的定性解釋題的分數比重；減少了極端複雜公式計算。",
+                  "2. 身份證明：應試當天必須攜帶有效香港身份證正本，以及官方准考證正本入閘。平板或電子身份證恕不接納。\n" +
+                  "3. 收音機檢查：應考英文科紙三聆聽時，須自備合格收音機及耳機，並確認電池充足、調頻(FM)正常運作。試場不提供額外收音設備。\n" +
+                  "4. 計算機標籤：數學/理科應試計算機背面必須具備官方「H.K.E.A.A. APPROVED」紅色印刷或綠色標籤，否則不可帶入考場。",
                   fontSize = 11.sp,
                   lineHeight = 15.sp,
                   color = Color.DarkGray
@@ -4301,89 +4493,659 @@ fun RevisionScreen() {
             }
           }
         }
-        1 -> { // Study Methods
+
+        2 -> { // 🧮 計算機神程 (CASIO fx-3650P II Ultimate Guide & Simulator)
           item {
-            Text("📚 港式文憑試神級溫習法指南", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
+            Text("🧮 CASIO 計算機神級程式 & 考場虛擬跑道", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("文憑試理科生人手必備神程。在此了解源碼，並可在下方「虛擬測試跑道」即時驗證、核對你計算機的程式輸出是否正確！", fontSize = 11.sp, color = Color.Gray)
           }
+
           item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-              Column(modifier = Modifier.padding(12.dp)) {
-                Text("🧠 費曼學習法 (Feynman Technique)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  "【概念轉化成直覺之王】\n" +
-                    "溫習一個複雜概念時（如物理的『冷次定律』或數學的『外心坐標推导』），試著將它用最直白的字眼、像解釋給 5 歲小童聽一樣寫在草稿紙上。一旦你在某些字眼卡住，即代表該處為你的邏輯盲點。Level Up 平台的改寫題便是利用此技術，讓考生在重新解答中自動填補思維漏洞！",
-                  fontSize = 11.sp,
-                  lineHeight = 15.sp,
-                  color = Color.DarkGray
+            // Internal Sub-chips selector for standard CASIO programs
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+              val progs = listOf("📍 二次方程 (QUAD)", "📍 聯立二元 (SimEq)", "📍 餘弦定律 (CosArea)")
+              progs.forEachIndexed { idx, title ->
+                val active = selectedCalcProg == idx
+                FilterChip(
+                  selected = active,
+                  onClick = {
+                    selectedCalcProg = idx
+                    calcOutputMain = "0."
+                    calcOutputSub = "READY"
+                  },
+                  label = { Text(title, fontSize = 10.sp) }
                 )
               }
             }
           }
+
           item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-              Column(modifier = Modifier.padding(12.dp)) {
-                Text("🔄 主動回想與間隔重複 (Spaced Repetitive Retrieval)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  "【大腦記憶對抗忘記】\n" +
-                    "溫習完一個課題後，在第1天、第3天、第7天分別做 2 條對應改寫題，便是最具效率的間隔訓練法！",
-                  fontSize = 11.sp,
-                  lineHeight = 15.sp,
-                  color = Color.DarkGray
-                )
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                val pTitle = when(selectedCalcProg) {
+                  0 -> "1. 二次方程與判別式 (Quadratic Eq & Discriminant)"
+                  1 -> "2. 二元一次聯立方程 (Simultaneous Equations)"
+                  else -> "3. 餘弦定律與三角形面積 (Cosine Law & Triangle Area)"
+                }
+                Text(pTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val pExplain = when(selectedCalcProg) {
+                  0 -> "此程式輸入 \$ax^2 + bx + c = 0\$ 的係數 \$A, B, C\$。會首先檢查並保存判別式值到 D，然後輸出根 \$x_1\$ 及 \$x_2\$。如無實根，程式會安全跳轉，避免 Math ERROR 崩潰。"
+                  1 -> "解聯立方程：\n\$a_1x + b_1y = c_1\$\n\$a_2x + b_2y = c_2\$\n順序輸入 6 個係數：\$A, B, C, D, X, Y\$。按 ◢ 會順序顯示未知數 \$x\$ 與 \$y\$ 的精確解。"
+                  else -> "輸入兩個鄰邊 \$a, b\$ 以及夾角 \$C\$（度數）。程式會存儲面積至 M，並自動算出第三條邊 \$c\$ （即邊長 c），以及三角形的實時面積。考卷 Part B 幾何題秒殺級核心。"
+                }
+                Text(pExplain, fontSize = 11.sp, color = Color.DarkGray, lineHeight = 15.sp)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text("💻 計算機輸入源碼 (CASIO fx-3650P II):", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
+                val pCode = when(selectedCalcProg) {
+                  0 -> "Lbl 1 : ? → A : ? → B : ? → C : B² - 4 A C → D : D < 0 → GoTo 2 : (-B + √ D) ◢ (-B - √ D) ◢ GoTo 1 : Lbl 2 : \"NO REAL\" ◢"
+                  1 -> "Lbl 1 : ? → A : ? → B : ? → C : ? → D : ? → X : ? → Y : AD - BX → M : (CY - BX) / M ◢ (AX - CD) / M ◢"
+                  else -> "Lbl 1 : ? → A : ? → B : ? → C : A² + B² - 2 A B cos( C → D : √ D ◢ 0.5 A B sin( C ◢"
+                }
+
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black, RoundedCornerShape(6.dp))
+                    .padding(8.dp)
+                ) {
+                  Text(
+                    text = pCode,
+                    color = Color(0xFF00FF00),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp
+                  )
+                }
               }
             }
           }
+
+          // Virtual LCD Simulator and Inputs
           item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-              Column(modifier = Modifier.padding(12.dp)) {
-                Text("🍅 極致專注番茄鐘操卷法 (Pomodoro Deep Study)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  "【防疲勞與多巴胺管理】\n" +
-                    "將手機置於另一個房間，設定 25 分鐘不被打擾的無雜訊答題，時間一到強制休息 5 分鐘。休息時切忌刷社交平台，應喝水或拉展，使大腦分泌健康多巴胺，以利下一個深思回合！",
-                  fontSize = 11.sp,
-                  lineHeight = 15.sp,
-                  color = Color.DarkGray
-                )
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("📟 考場即時虛擬調試跑道 (Virtual LCD Tester)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+
+                // Virtual LCD SCREEN
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .height(65.dp)
+                    .background(Color(0xFFD4E157), RoundedCornerShape(6.dp))
+                    .border(2.dp, Color.Gray, RoundedCornerShape(6.dp))
+                    .padding(8.dp)
+                ) {
+                  Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                      text = calcOutputSub.uppercase(),
+                      fontFamily = FontFamily.Monospace,
+                      fontSize = 10.sp,
+                      color = Color.DarkGray
+                    )
+                    Text(
+                      text = calcOutputMain,
+                      fontFamily = FontFamily.Monospace,
+                      fontSize = 18.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = Color.Black,
+                      modifier = Modifier.align(Alignment.End)
+                    )
+                  }
+                }
+
+                // Inputs depending on Selected Program
+                if (selectedCalcProg == 0) {
+                  // QUAD inputs
+                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                      value = calcInputA,
+                      onValueChange = { calcInputA = it },
+                      label = { Text("A (x²)", fontSize = 10.sp) },
+                      modifier = Modifier.weight(1f),
+                      singleLine = true,
+                      shape = RoundedCornerShape(8.dp)
+                    )
+                    OutlinedTextField(
+                      value = calcInputB,
+                      onValueChange = { calcInputB = it },
+                      label = { Text("B (x)", fontSize = 10.sp) },
+                      modifier = Modifier.weight(1f),
+                      singleLine = true,
+                      shape = RoundedCornerShape(8.dp)
+                    )
+                    OutlinedTextField(
+                      value = calcInputC,
+                      onValueChange = { calcInputC = it },
+                      label = { Text("C (繼)", fontSize = 10.sp) },
+                      modifier = Modifier.weight(1f),
+                      singleLine = true,
+                      shape = RoundedCornerShape(8.dp)
+                    )
+                  }
+                  Text("💡 實例測試：輸入 A=1, B=-5, C=6。這代表 \$x^2 - 5x + 6 = 0\$，兩個實數根分別是 3 和 2！", fontSize = 10.sp, color = Color.Gray, lineHeight = 13.sp)
+                } else if (selectedCalcProg == 1) {
+                  // SimEq inputs
+                  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("方程 1: ax + by = c   |   方程 2: dx + ey = f", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      OutlinedTextField(
+                        value = calcInputA,
+                        onValueChange = { calcInputA = it },
+                        label = { Text("a", fontSize = 9.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                      )
+                      OutlinedTextField(
+                        value = calcInputB,
+                        onValueChange = { calcInputB = it },
+                        label = { Text("b", fontSize = 9.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                      )
+                      OutlinedTextField(
+                        value = calcInputC,
+                        onValueChange = { calcInputC = it },
+                        label = { Text("c", fontSize = 9.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                      )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      OutlinedTextField(
+                        value = calcInputD,
+                        onValueChange = { calcInputD = it },
+                        label = { Text("d", fontSize = 9.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                      )
+                      OutlinedTextField(
+                        value = calcInputE,
+                        onValueChange = { calcInputE = it },
+                        label = { Text("e", fontSize = 9.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                      )
+                      OutlinedTextField(
+                        value = calcInputF,
+                        onValueChange = { calcInputF = it },
+                        label = { Text("f", fontSize = 9.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                      )
+                    }
+                    Text("💡 實例測試：解 \$x+y=5, x-y=1\$。輸入 a=1, b=1, c=5 且 d=1, e=-1, f=1。預期輸出 \$x=3, y=2\$！", fontSize = 10.sp, color = Color.Gray, lineHeight = 13.sp)
+                  }
+                } else {
+                  // CosArea inputs
+                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                      value = calcInputA,
+                      onValueChange = { calcInputA = it },
+                      label = { Text("編長 a", fontSize = 10.sp) },
+                      modifier = Modifier.weight(1f),
+                      singleLine = true
+                    )
+                    OutlinedTextField(
+                      value = calcInputB,
+                      onValueChange = { calcInputB = it },
+                      label = { Text("編長 b", fontSize = 10.sp) },
+                      modifier = Modifier.weight(1f),
+                      singleLine = true
+                    )
+                    OutlinedTextField(
+                      value = calcInputC,
+                      onValueChange = { calcInputC = it },
+                      label = { Text("夾角 C (度)", fontSize = 10.sp) },
+                      modifier = Modifier.weight(1f),
+                      singleLine = true
+                    )
+                  }
+                  Text("💡 實例測試：已知三角形邊 \$a=3, b=4\$, 夾角 \$C=90^{\\circ}\$。第三條邊預期為 5.0，面積為 6.0！", fontSize = 10.sp, color = Color.Gray, lineHeight = 13.sp)
+                }
+
+                Button(
+                  onClick = {
+                    try {
+                      if (selectedCalcProg == 0) {
+                        val a = calcInputA.toDoubleOrNull() ?: 1.0
+                        val b = calcInputB.toDoubleOrNull() ?: -5.0
+                        val c = calcInputC.toDoubleOrNull() ?: 6.0
+                        if (a == 0.0) {
+                          calcOutputMain = "Math ERROR"
+                          calcOutputSub = "A CANNOT BE ZERO"
+                        } else {
+                          val disc = b * b - 4 * a * c
+                          if (disc < 0) {
+                            calcOutputMain = "Math ERROR"
+                            calcOutputSub = "DISC D=$disc < 0"
+                          } else {
+                            val r1 = (-b + Math.sqrt(disc)) / (2 * a)
+                            val r2 = (-b - Math.sqrt(disc)) / (2 * a)
+                            calcOutputMain = "r1 = $r1  ◢"
+                            calcOutputSub = "r2 = $r2 | DISC D=$disc"
+                          }
+                        }
+                      } else if (selectedCalcProg == 1) {
+                        val a = calcInputA.toDoubleOrNull() ?: 1.0
+                        val b = calcInputB.toDoubleOrNull() ?: 1.0
+                        val c = calcInputC.toDoubleOrNull() ?: 5.0
+                        val d = calcInputD.toDoubleOrNull() ?: 1.0
+                        val e = calcInputE.toDoubleOrNull() ?: -1.0
+                        val f = calcInputF.toDoubleOrNull() ?: 1.0
+
+                        val det = a * e - b * d
+                        if (det == 0.0) {
+                          calcOutputMain = "Math ERROR"
+                          calcOutputSub = "NO UNIQUE SOLUTION"
+                        } else {
+                          val x = (c * e - b * f) / det
+                          val y = (a * f - c * d) / det
+                          calcOutputMain = "X = $x  ◢"
+                          calcOutputSub = "Y = $y | DET M=$det"
+                        }
+                      } else {
+                        val a = calcInputA.toDoubleOrNull() ?: 3.0
+                        val b = calcInputB.toDoubleOrNull() ?: 4.0
+                        val deg = calcInputC.toDoubleOrNull() ?: 90.0
+
+                        val rad = Math.toRadians(deg)
+                        val c2 = a * a + b * b - 2 * a * b * Math.cos(rad)
+                        val c = Math.sqrt(c2)
+                        val area = 0.5 * a * b * Math.sin(rad)
+                        calcOutputMain = "SIDE c = $c  ◢"
+                        calcOutputSub = "AREA = $area"
+                      }
+                    } catch (ex: Exception) {
+                      calcOutputMain = "Math ERROR"
+                      calcOutputSub = "INVALID CHARACTERS"
+                    }
+                  },
+                  modifier = Modifier.fillMaxWidth().height(42.dp)
+                ) {
+                  Text("⚡ 虛擬運算 DSE 常規輸出", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
               }
             }
           }
         }
-        2 -> { // Exam Strategy
+
+        3 -> { // 👥 自修生逆襲 (Self-Study Candidates Resource Hub)
           item {
-            Text("⏳ 考場時間分配與 MC 3-Pass 答題法", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
+            Text("👥 自修生逆襲攻略與全港自修室指南", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("沒有學校老師的貼身督促？自修生必須有比別人更強的體系管理，我們為你特設了 SBA 縮表機制及 18 區溫書好去處！", fontSize = 11.sp, color = Color.Gray)
           }
+
           item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-              Column(modifier = Modifier.padding(12.dp)) {
-                Text("🎯 MC 3-Pass 答題操卷術", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(6.dp))
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f))
+            ) {
+              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("🧠 自修生必知：SBA 校本評核「無損過關」秘辛", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                 Text(
-                  "DSE MC 卷限時極度緊迫，切忌遇到難題便卡死。請嚴格執行 3-Pass 策略：\n\n" +
-                    "• 1st Pass (秒殺題)：只重做一看便知算法的送分題與基礎概念題。一旦需要思考多於 15 秒，立即標記、跳過。這能確保基本盤的所有易取分數安穩入袋。\n\n" +
-                    "• 2nd Pass (邏輯題)：此時心態放鬆、基本分已穩。重回標記題目，攻克具有中度運算與轉換的題目（如 Level Up 提供的 4 大對抗思維考題），每題限時 90 秒解答。\n\n" +
-                    "• 3rd Pass (難題衝刺)：最後 10 分鐘，將精力投注於高難度或需要大運算量的壓軸幾何/二次分析題，或使用排除法、代入特值法、計算器程序（如神級常數等）作答考位。",
+                  "眾所周知，自修生係無學校「校本評核(SBA)」分數學。考評局會如何處理其 20% 分數？\n\n" +
+                  "依據官方統計學機制，考評局會根據你在 Paper 1 卷一和 Paper 2 卷二的「實得考試卷面分」，按全港考生的統計比對，無損折算一組虛擬的 SBA 分數計入成績單。\n" +
+                  "💡 【黃金戰略】：也就是說，自修生不要有心理包袱，你只需要在 DSE 當天專注力壓群雄。只要卷面分極高，你的 SBA 分數就會自動被比對成 5** 最高期望。本應用的「學科挑戰」即是為極致模擬卷面設計！",
                   fontSize = 11.sp,
                   lineHeight = 15.sp,
-                  color = Color.DarkGray
+                  color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
               }
             }
           }
+
+          // Districts search for study rooms
           item {
-            Card(modifier = Modifier.fillMaxWidth()) {
+            Card(
+              modifier = Modifier.fillMaxWidth()
+            ) {
               Column(modifier = Modifier.padding(12.dp)) {
-                Text("🔋 考前半小時多巴胺管理法 (The Pre-Exam Dopamine Alignment)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  "【穩定多巴胺降低焦慮】\n" +
-                    "踏進考場前 30 分鐘，停止與合考同學高聲討論難題或答案，那只會激發游離的壓力與恐慌。此時最好戴上耳機聆聽純音樂，默默看一遍本平台的「錯題本(Mistakes)」，重溫自己的常犯代數 and 條件遺漏，將心率降到 75bpm，用最沉穩理性的姿態接招！",
-                  fontSize = 11.sp,
-                  lineHeight = 15.sp,
-                  color = Color.DarkGray
+                Text("📍 全港 18 區文憑試黃金溫書位置 (含入座證提示)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val districtsList = listOf(
+                  "all" to "🌐 全部區域",
+                  "hk" to "🏙️ 香港島",
+                  "kln" to "🚇 九龍區",
+                  "nt" to "🏕️ 新界區"
                 )
+
+                LazyRow(
+                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                ) {
+                  items(districtsList) { (key, name) ->
+                    FilterChip(
+                      selected = selectedDistrict == key,
+                      onClick = { selectedDistrict = key },
+                      label = { Text(name, fontSize = 10.sp) }
+                    )
+                  }
+                }
+
+                val rooms = listOf(
+                  Triple("hk", "香港中央圖書館 (10-11樓精研自修區)", "時間：09:00 - 21:00\n重點：設有獨立叉電插座，WiFi 頂級，座位極多，3月-5月需於網上抽籤領取入座證。"),
+                  Triple("hk", "灣仔公共圖書館 學生自修室", "時間：09:00 - 20:00\n重點：地鐵站出口行 5 分鐘，環境清幽無雜音，適合文科考生安靜思考與對照。"),
+                  Triple("kln", "九龍公共圖書館 (培正道)", "時間：08:00 - 22:00 (Study Leave 加時)\n重點：老牌溫修重鎮，位處何文田，周邊多平價食堂。自修室座位寬敞，強推！"),
+                  Triple("kln", "石硤尾公共圖書館 自修室", "時間：09:00 - 20:00\n重點：自修座間隔高，私隱度高，附近有大量咖啡吧，極受自修生歡迎。"),
+                  Triple("nt", "沙田公共圖書館 自修室", "時間：08:00 - 22:00\n重點：新界東最受歡迎！隔音極好。因人流極大，上午 7:30 需開始排隊，3-5月必須主動出示入座證！"),
+                  Triple("nt", "荃灣公共圖書館 自修室", "時間：09:00 - 21:00\n重點：臨近地鐵，全場設有冷氣溫控防著涼，且通風良好不昏睡。")
+                )
+
+                val filteredRooms = if (selectedDistrict == "all") rooms else rooms.filter { it.first == selectedDistrict }
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  filteredRooms.forEach { (_, title, detail) ->
+                    Card(
+                      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                      border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.3f)),
+                      modifier = Modifier.fillMaxWidth()
+                    ) {
+                      Column(modifier = Modifier.padding(10.dp)) {
+                        Text("🏛️ $title", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(detail, fontSize = 10.sp, color = Color.DarkGray, lineHeight = 13.sp)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        4 -> { // 🏫 教師專區 (Teacher & Tutor Corner with mock worksheet generator & analytics)
+          item {
+            Text("🏫 老師與教學導師專用：DSE 備課智庫", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("為學校學科主任或補習導師設計，您可以在此為學生「快速生成雙語模擬工作紙」或解讀「學生整體答題盲區分析」。", fontSize = 11.sp, color = Color.Gray)
+          }
+
+          item {
+            Card(
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("📋 快速生成雙語 DSE 工作紙與標準 Marking Scheme", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text("科目：", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  val subjects = listOf("math" to "📐 數學必修", "physics" to "⚡ 物理科", "chemistry" to "🧪 化學科")
+                  subjects.forEach { (key, label) ->
+                    val active = selectedWorksheetSubject == key
+                    FilterChip(
+                      selected = active,
+                      onClick = {
+                        selectedWorksheetSubject = key
+                        worksheetGeneratedShow = false
+                      },
+                      label = { Text(label, fontSize = 9.sp) }
+                    )
+                  }
+                }
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Text("題數：", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                  val counts = listOf(3, 5)
+                  counts.forEach { count ->
+                    val active = selectedWorksheetCount == count
+                    FilterChip(
+                      selected = active,
+                      onClick = {
+                        selectedWorksheetCount = count
+                        worksheetGeneratedShow = false
+                      },
+                      label = { Text("$count 題", fontSize = 9.sp) }
+                    )
+                  }
+                }
+
+                Button(
+                  onClick = {
+                    worksheetGeneratedShow = true
+                    feedbackCopiedMsg = false
+                    if (selectedWorksheetSubject == "math") {
+                      worksheetGeneratedText = """
+                        HONG KONG DIPLOMA OF SECONDARY EDUCATION EXAMINATION
+                        MATHEMATICS COMPULSORY PART - SECTION A
+                        香港中學文憑考試：數學必修部分 - 甲部
+
+                        [Q1] Simple Move & Circle Equations (圓的方程與動點軌跡)
+                        Let C be the circle x² + y² - 8x - 6y + 21 = 0 on the Cartesian plane. 
+                        A straight line L passes through the origin O with slope m. 
+                        Find the range of values of m such that L intersects with the circle C at two distinct points.
+                        設 C 為直角坐標平面上的圓 C: x² + y² - 8x - 6y + 21 = 0。 
+                        直線 L 通過原點 O 且斜率為 m。若 L 與 C 相交於兩個不同點，求 m 的取值範圍。 [4 Marks / 分]
+
+                        [Q2] Simultaneous Variable Substituted (二元一次方程組的置換)
+                        Given x + y = 3k and 2x - y = k + 1, where k is a positive real constant. 
+                        Express x and y in terms of k. 
+                        已知 x + y = 3k 及 2x - y = k + 1，其中 k 設為正實數常數。
+                        試以 k 表示 x 與 y 的實數解。 [3 Marks / 分]
+
+                        [Q3] Trigonometric Coordinate Move (三角形動點與三角比)
+                        In standard acute triangle ABC, AB = 5, BC = 7, and the area is 10√6.
+                        Calculate the exact value of angle B in degrees, and find the length of AC.
+                        在標準銳角三角形 ABC 中，AB = 5，BC = 7，面積為 10√6。
+                        求夾角 B 的精確度數，並求邊長 AC 實正值。 [4 Marks / 分]
+                      """.trimIndent()
+
+                      worksheetGeneratedScheme = """
+                        OFFICIAL MARKING SCHEME (評分及批改指引)
+
+                        Q1 Solution:
+                        1. Substitute y = mx into Circle C:
+                           x² + (mx)² - 8x - 6(mx) + 21 = 0
+                           (1 + m²)x² - (8 + 6m)x + 21 = 0 ------- [M1] - Substitution
+                        2. Since L intersects C at two distinct points, discriminant Δ > 0:
+                           Δ = [-(8 + 6m)]² - 4(1+m²)(21) > 0 ----- [M1] - Discriminant condition
+                           (64 + 96m + 36m²) - 84 - 84m² > 0
+                           -48m² + 96m - 20 > 0
+                           12m² - 24m + 5 < 0 --------------------- [A1] - Quadratic Ineq Form
+                        3. Solving the quadratic inequality:
+                           Roots of 12m² - 24m + 5 = 0 are m = (6 ± √21) / 6
+                           Therefore, range is: (6 - √21)/6 < m < (6 + √21)/6 ---- [A1] - Final range
+
+                        Q2 Solution:
+                        1. Adding two equations: (x+y) + (2x-y) = 3k + k + 1
+                           3x = 4k + 1  =>  x = (4k + 1) / 3 ----- [M1] - Elimination
+                        2. Substitute x into (x+y = 3k):
+                           y = 3k - (4k+1)/3 = (9k - 4k - 1) / 3 = (5k - 1) / 3 --- [A1] - Expression for y
+
+                        Q3 Solution:
+                        1. Area = 0.5 * AB * BC * sin B:
+                           10√6 = 0.5 * 5 * 7 * sin B  =>  sin B = (20√6) / 35 = (4√6) / 7 --- [M1]
+                        2. For acute triangle, cos B = √(1 - sin²B) = √(1 - 96/49) => Since angle B must be acute,
+                           we have exact ratio. Substitute into Cosine Law:
+                           AC² = AB² + BC² - 2(AB)(BC) cos B --------------------- [M1] [A1]
+                      """.trimIndent()
+                    } else if (selectedWorksheetSubject == "physics") {
+                      worksheetGeneratedText = """
+                        HONG KONG DIPLOMA OF SECONDARY EDUCATION EXAMINATION
+                        PHYSICS - CORE MECHANICS & EMI BILINGUAL MOCK
+                        香港中學文憑考試：物理科 - 經典力學與電磁感應模擬工作紙
+
+                        [Q1] Lenz's Law Symmetrical Induction (冷次定律不對稱電磁感應)
+                        A bar magnet is dropped vertically downward through a horizontal stationary copper loop. 
+                        (a) State the direction of the induced current in the loop (viewed from above) as the north pole of the magnet approaches the loop. 
+                        (b) Explain your answer in terms of magnetic flux change.
+                        一條條形磁鐵由高處垂直向下穿過一個水平放置、固定的銅環。
+                        (a) 當磁鐵的北極(N極)接近銅環時，指出由上向下看時銅環中感應電流的方向。
+                        (b) 從磁通量變化的角度解釋你(a)的答案。 [4 Marks / 分]
+
+                        [Q2] Gravitational Potential Escape (萬有引力天體重力逃逸)
+                        Explan why the escape velocity of a space probe from Planet X depends on Planet X's mass M and radius R but does not depend on the probe's mass m.
+                        解釋為甚麼太空探測器從 X 行星的逃逸速度取決於行星的質量 M 與半徑 R，但與探測器本身的質量 m 無關。 [3 Marks / 分]
+                      """.trimIndent()
+
+                      worksheetGeneratedScheme = """
+                        OFFICIAL MARKING SCHEME (評分及批改指引)
+
+                        Q1 Solution:
+                        (a) Direction is anticlockwise (逆時針方向) ------- [A1]
+                        (b) Explanation:
+                            - As the north pole of the magnet approaches the loop, the downward magnetic flux through the loop increases. -- [M1]
+                            - According to Lenz's law, the induced current must generate an upward magnetic field to oppose this increase. -- [M1]
+                            - By the Right-Hand Grip Rule, the current must flow anticlockwise (viewed from above). -- [A1]
+
+                        Q2 Solution:
+                        - At the surface, total energy of the probe at escape is zero: E = KE + PE = 0
+                          0.5 * m * v² - G * M * m / R = 0 ----------------- [M1] - Energy Conservation Form
+                        - The mass of the probe 'm' appears in both terms and can be canceled out:
+                          v = √(2GM/R) ------------------------------------- [M1]
+                        - Therefore, v depends only on G, M, and R, which are properties of planet X. - [A1]
+                      """.trimIndent()
+                    } else {
+                      worksheetGeneratedText = """
+                        HONG KONG DIPLOMA OF SECONDARY EDUCATION EXAMINATION
+                        CHEMISTRY - BILINGUAL MCQ & STRUCTURAL WORKsheet
+                        香港中學文憑考試：化學科 - 雙語結構分析與滴定綜合工作紙
+
+                        [Q1] Active Titration & Calculation (化學中和滴定計算)
+                        A student used 0.1M NaOH(aq) to titrate 25.0 cm³ of a commercial vinegar solution containing ethanoic acid. 
+                        The titration required exactly 18.5 cm³ of NaOH for complete neutralization. 
+                        (a) State the chemical equation of the neutralization.
+                        (b) Calculate the concentration of ethanoic acid in the vinegar.
+                        某同學用 0.1M 的氫氧化鈉溶液(NaOH)滴定 25.0 cm³ 含有乙酸(醋酸)的家用白醋。
+                        滴定共消耗了 18.5 cm³ 的 NaOH。
+                        (a) 寫出此中和反應的化學方程式。
+                        (b) 計算該白醋中乙酸的摩爾濃度。 [4 Marks / 分]
+                      """.trimIndent()
+
+                      worksheetGeneratedScheme = """
+                        OFFICIAL MARKING SCHEME (評分及批改指引)
+
+                        Q1 Solution:
+                        (a) CH₃COOH(aq) + NaOH(aq) → CH₃COONa(aq) + H₂O(l) -------- [A1] (includes correct physical states)
+                        (b) Calculation:
+                            - No. of moles of NaOH reacted = 0.1 * (18.5 / 1000) = 0.00185 mol ----- [M1]
+                            - Since mole ratio of CH₃COOH : NaOH is 1 : 1, mole of CH₃COOH in 25 cm³ = 0.00185 mol. -- [M1]
+                            - Concentration = 0.00185 mol / (25.0/1000 dm³) = 0.074 M --------- [A1]
+                      """.trimIndent()
+                    }
+                  },
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Text("⚡ 智能生成對稱 DSE 工作紙 (含 Marking Scheme)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                if (worksheetGeneratedShow) {
+                  HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text("💡 雙語模擬工作紙已生成", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
+                    Row(
+                      horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                      Button(
+                        onClick = {
+                          val allText = "--- WORKsheet ---\n$worksheetGeneratedText\n\n--- MARKING SCHEME ---\n$worksheetGeneratedScheme"
+                          val annotated = androidx.compose.ui.text.AnnotatedString(allText)
+                          clipboardManager.setText(annotated)
+                          feedbackCopiedMsg = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(28.dp)
+                      ) {
+                        Text(if (feedbackCopiedMsg) "已複製！" else "📋 複製工作紙", fontSize = 10.sp)
+                      }
+                    }
+                  }
+
+                  // Generated Box
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .heightIn(max = 200.dp)
+                      .background(Color.White, RoundedCornerShape(6.dp))
+                      .border(1.dp, Color.LightGray, RoundedCornerShape(6.dp))
+                      .padding(8.dp)
+                      .verticalScroll(rememberScrollState())
+                  ) {
+                    Column {
+                      Text(
+                        text = worksheetGeneratedText,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Serif,
+                        color = Color.Black
+                      )
+                      Spacer(modifier = Modifier.height(10.dp))
+                      HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                      Spacer(modifier = Modifier.height(10.dp))
+                      Text(
+                        text = worksheetGeneratedScheme,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                      )
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          item {
+            Card(
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("📊 學科班級弱點診斷雷達 (Classroom Diagnostics Map)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                Text("此雷達圖與分析幫助老師掌握 5-6 年級大考或模擬試的通病，提供精準教學介入建議：", fontSize = 10.sp, color = Color.Gray)
+
+                val weakMap = listOf(
+                  Triple("📐 數學卷一軌跡與動點 (Trig & Locus)", "高危 📉 (42% 及格率)", "【建議】：學生不理解『動點軌跡』是保持等距，常直接套代數式，應多利用本應用的『題型思維改寫』推敲幾何對稱性。"),
+                  Triple("⚡ 物理冷次定理解釋 (Lenz's Law Qual)", "極度高危 🚨 (35% 及格率)", "【建議】：學生習慣寫『有感應電流』，但欠缺指明『磁通量變化方向』以及大腦觀測視角。在改寫題庫中有 5 道針對性定性改寫題。"),
+                  Triple("🇨🇳 中文文言多義詞代元 (Classical Chinese)", "中度高危 ⚠️ (55% 及格率)", "【建議】：學生在文言文斷句與古今異義偏弱，建議引導學生在平台的『錯題本』多重做代元最簡轉換。")
+                )
+
+                weakMap.forEach { (sub, status, advice) ->
+                  Column(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(6.dp))
+                      .padding(10.dp)
+                      .border(androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.2f)), RoundedCornerShape(6.dp))
+                  ) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                      Text(sub, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                      Text(status, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(advice, fontSize = 10.sp, color = Color.DarkGray, lineHeight = 14.sp)
+                  }
+                }
               }
             }
           }
@@ -5946,5 +6708,184 @@ fun OnlineStudyGroupsCard(viewModel: DseViewModel) {
         }
       }
     }
+  }
+}
+
+@Composable
+fun LeaderboardScreen(userPoints: Int) {
+  val level = (userPoints / 200) + 1
+  val xpToNext = 200 - (userPoints % 200)
+  val progressPercent = (userPoints % 200).toFloat() / 200f
+
+  val mockLeaderboard = listOf(
+    com.example.ui.LeaderboardUser("1", "🥇 Audrey Tang", "英文/物理雙雙 5**", 1850, 48),
+    com.example.ui.LeaderboardUser("2", "🥈 Brianareb (你)", "物理必殺生", userPoints, 12),
+    com.example.ui.LeaderboardUser("3", "🥉 Stephanie Tang", "數學科神人", 420, 24),
+    com.example.ui.LeaderboardUser("4", "🎖️ Kelvin Lo", "英文科狂熱者", 360, 18),
+    com.example.ui.LeaderboardUser("5", "🎖️ Melody Ho", "化學核心戰士", 280, 14),
+    com.example.ui.LeaderboardUser("6", "🎖️ Jackson Ng", "自修老兵", 190, 8)
+  ).sortedByDescending { it.score }
+
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(16.dp),
+    verticalArrangement = Arrangement.spacedBy(16.dp)
+  ) {
+    Text(
+      "🏆 DSE 戰友積分榜 (Leaderboard)",
+      fontSize = 20.sp,
+      fontWeight = FontWeight.Black,
+      color = MaterialTheme.colorScheme.primary
+    )
+    Text(
+      "與全港應屆 DSE 考友、自修生戰友共同連線，互相勉勵！每攻克一道改寫題即賺取點數，提振衝星鬥志！",
+      fontSize = 12.sp,
+      color = Color.Gray
+    )
+
+    Card(
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+      modifier = Modifier.fillMaxWidth()
+    ) {
+      Row(
+        modifier = Modifier.padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+      ) {
+        Column {
+          Text("👑 我的當前稱號 (Level $level)", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+          Text(
+            text = when (level) {
+              1 -> "🐣 文憑試初生之犢"
+              2 -> "🛡️ 戰術探索者"
+              3 -> "⚔️ 題海征服者"
+              4 -> "⚡ 5* 準大師"
+              else -> "👑 5** 終極神人"
+            },
+            fontWeight = FontWeight.Black,
+            fontSize = 18.sp,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+          )
+          Spacer(modifier = Modifier.height(4.dp))
+          Text("距離下一等級還需 $xpToNext XP", fontSize = 10.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+          LinearProgressIndicator(
+            progress = { progressPercent },
+            modifier = Modifier
+              .width(180.dp)
+              .padding(top = 4.dp)
+              .clip(RoundedCornerShape(4.dp)),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f),
+          )
+        }
+        Text(
+          "$userPoints XP",
+          fontSize = 22.sp,
+          fontWeight = FontWeight.Black,
+          color = MaterialTheme.colorScheme.onPrimaryContainer,
+          fontFamily = FontFamily.Monospace
+        )
+      }
+    }
+
+    Card(
+      modifier = Modifier.weight(1f).fillMaxWidth()
+    ) {
+      Column(modifier = Modifier.padding(12.dp)) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp),
+          horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+          Text("排名 & 暱稱 Name", fontWeight = FontWeight.Black, fontSize = 11.sp, color = Color.Gray)
+          Row {
+            Text("答題數", fontWeight = FontWeight.Black, fontSize = 11.sp, color = Color.Gray)
+            Spacer(modifier = Modifier.width(32.dp))
+            Text("總經驗點", fontWeight = FontWeight.Black, fontSize = 11.sp, color = Color.Gray)
+          }
+        }
+        HorizontalDivider()
+        LazyColumn(
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.fillMaxSize().padding(top = 8.dp)
+        ) {
+          items(mockLeaderboard) { peer ->
+            val isUser = peer.name.contains("你")
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                  if (isUser) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent,
+                  RoundedCornerShape(8.dp)
+                )
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                  text = when (peer.rank) {
+                    "1" -> "🥇"
+                    "2" -> "🥈"
+                    "3" -> "🥉"
+                    else -> " ${peer.rank} "
+                  },
+                  fontWeight = FontWeight.Bold,
+                  fontSize = 13.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                  Text(
+                    peer.name,
+                    fontWeight = if (isUser) FontWeight.Black else FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = if (isUser) MaterialTheme.colorScheme.primary else Color.Black
+                  )
+                  Text(peer.tagline, fontSize = 9.sp, color = Color.Gray)
+                }
+              }
+
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                  "${peer.questionsAnswered} 題",
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Medium,
+                  color = Color.DarkGray
+                )
+                Spacer(modifier = Modifier.width(42.dp))
+                Text(
+                  "${peer.score} XP",
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  fontFamily = FontFamily.Monospace,
+                  color = if (isUser) MaterialTheme.colorScheme.primary else Color.Black
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+data class LeaderboardUser(
+  val rank: String,
+  val name: String,
+  val tagline: String,
+  val score: Int,
+  val questionsAnswered: Int
+)
+
+fun reasonDescription(tag: String): String {
+  return when (tag) {
+    "calculation_error" -> "🧮 計算錯誤"
+    "concept_confusion" -> "🧠 概念未明"
+    "careless_reading" -> "🔍 審題不清"
+    "formula_misuse" -> "📐 公式誤用"
+    "time_pressure" -> "⏳ 時間壓迫"
+    else -> "⚠️ 常見盲點"
   }
 }

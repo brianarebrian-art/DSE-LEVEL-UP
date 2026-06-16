@@ -69,4 +69,15 @@ class DseRepository(private val dseDao: DseDao) {
   suspend fun clearBadges() {
     dseDao.clearBadges()
   }
+
+  // Past Paper Resources
+  val allPastPaperResources: Flow<List<PastPaperResourceEntity>> = dseDao.getAllPastPaperResourcesFlow()
+
+  suspend fun insertPastPaperResources(resources: List<PastPaperResourceEntity>) {
+    dseDao.insertPastPaperResources(resources)
+  }
+
+  suspend fun updatePastPaperDownloadStatus(id: String, isDownloaded: Boolean, localFilePath: String?, downloadCount: Int) {
+    dseDao.updatePastPaperDownloadStatus(id, isDownloaded, localFilePath, downloadCount)
+  }
 }

@@ -64,3 +64,18 @@ data class BadgeEntity(
   val iconName: String,
   val unlockTimestamp: Long
 )
+
+@Entity(tableName = "past_paper_resources")
+data class PastPaperResourceEntity(
+  @PrimaryKey val id: String, // e.g. "2024_math_p1"
+  val year: String, // "2024", "2023", etc.
+  val subject: String, // "math", "english", "physics", "chemistry", "chinese", "biology"
+  val paperType: String, // "mc", "lq", "listening"
+  val title: String,
+  val titleChinese: String,
+  val fileSize: String,
+  val downloadCount: Int,
+  val syllabusKeypoints: String,
+  val isDownloaded: Boolean = false,
+  val localFilePath: String? = null
+)

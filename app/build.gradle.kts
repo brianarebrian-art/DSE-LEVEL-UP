@@ -119,3 +119,14 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+tasks.register("gitStatus") {
+  doLast {
+    val process = ProcessBuilder("git", "status").start()
+    process.inputStream.reader().use { println(it.readText()) }
+    process.errorStream.reader().use { println(it.readText()) }
+    process.waitFor()
+  }
+}
+
+
