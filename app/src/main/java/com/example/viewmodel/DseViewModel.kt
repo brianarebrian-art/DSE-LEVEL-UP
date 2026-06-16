@@ -101,9 +101,161 @@ class DseViewModel(application: Application) : AndroidViewModel(application) {
   private val _aiTutorLoading = MutableStateFlow(false)
   val aiTutorLoading: StateFlow<Boolean> = _aiTutorLoading.asStateFlow()
 
+  // --- PREMIUM STUDY FOCUS & ONLINE STUDY GROUPS ---
+  private val _customFocusSubjects = MutableStateFlow(listOf("數學", "物理", "化學", "生物", "英文", "中文", "BAFS / ICT"))
+  val customFocusSubjects: StateFlow<List<String>> = _customFocusSubjects.asStateFlow()
+
+  private val _selectedFocusSubject = MutableStateFlow("數學")
+  val selectedFocusSubject: StateFlow<String> = _selectedFocusSubject.asStateFlow()
+
+  private val _isFocusTimerRunning = MutableStateFlow(false)
+  val isFocusTimerRunning: StateFlow<Boolean> = _isFocusTimerRunning.asStateFlow()
+
+  private val _isFocusLockActive = MutableStateFlow(false)
+  val isFocusLockActive: StateFlow<Boolean> = _isFocusLockActive.asStateFlow()
+
+  private val _focusSecondsElapsed = MutableStateFlow(0)
+  val focusSecondsElapsed: StateFlow<Int> = _focusSecondsElapsed.asStateFlow()
+
+  // Accumulated minutes mapped by subject (e.g., "數學" to 15.5f)
+  private val _focusSubjectMinutes = MutableStateFlow<Map<String, Float>>(
+    mapOf("數學" to 12.5f, "物理" to 6.2f, "化學" to 0f, "生物" to 2.5f, "英文" to 8f, "中文" to 4f)
+  )
+  val focusSubjectMinutes: StateFlow<Map<String, Float>> = _focusSubjectMinutes.asStateFlow()
+
+  // Online Study Group Users
+  private val _onlineGroupUsers = MutableStateFlow(listOf(
+    StudyGroupUser("g1", "沙田自修戰神", "🟢 專注中 | 數學", true, 280, "沙田崇真中學"),
+    StudyGroupUser("g2", "協恩全能少女", "🟢 專注中 | 英文", true, 265, "協恩中學"),
+    StudyGroupUser("g3", "喇沙物理之王", "🟡 休息中", true, 240, "喇沙書院"),
+    StudyGroupUser("g4", "拔萃商科狀元", "🔴 離線", false, 185, "拔萃男書院"),
+    StudyGroupUser("g5", "你 (今日最勤奮)", "🟡 休息中", true, 45, "自強不息候選人")
+  ))
+  val onlineGroupUsers: StateFlow<List<StudyGroupUser>> = _onlineGroupUsers.asStateFlow()
+
+  private val _isUserInGroup = MutableStateFlow(true)
+  val isUserInGroup: StateFlow<Boolean> = _isUserInGroup.asStateFlow()
+
+  private val _groupRoomName = MutableStateFlow("DSE 5** 黃金衝刺組 (04)")
+  val groupRoomName: StateFlow<String> = _groupRoomName.asStateFlow()
+
+  private var focusTimerJob: kotlinx.coroutines.Job? = null
+
   init {
     viewModelScope.launch {
       preloadInitialQuestions()
+    }
+  }
+
+  fun startFocusTimer() {
+    if (_isFocusTimerRunning.value) return
+    _isFocusTimerRunning.value = true
+    _focusSecondsElapsed.value = 0
+    
+    // Update self status in group or leaderboard
+    updateUserStatusInGroup(isFocused = true)
+
+    focusTimerJob = viewModelScope.launch {
+      while (true) {
+        kotlinx.coroutines.delay(1000)
+        _focusSecondsElapsed.value += 1
+      }
+    }
+  }
+
+  fun stopFocusTimer() {
+    focusTimerJob?.cancel()
+    focusTimerJob = null
+    _isFocusTimerRunning.value = false
+    _isFocusLockActive.value = false
+
+    val elapsedSec = _focusSecondsElapsed.value
+    if (elapsedSec > 0) {
+      val addedMinutes = elapsedSec / 60f
+      val currentSub = _selectedFocusSubject.value
+      
+      // Update local subject focus minutes
+      val updatedMap = _focusSubjectMinutes.value.toMutableMap()
+      val previousMinutes = updatedMap[currentSub] ?: 0f
+      updatedMap[currentSub] = previousMinutes + addedMinutes
+      _focusSubjectMinutes.value = updatedMap
+
+      // Award Points for focus time! E.g. +10 XP for starting focus, and +1 XP per 10 seconds focused
+      viewModelScope.launch {
+        val earnedXP = (elapsedSec / 10).coerceAtLeast(1)
+        val oldProgress = repository.getUserProgressDirect() ?: UserProgressEntity()
+        val newPoints = oldProgress.scorePoints + earnedXP
+        repository.insertOrUpdateUserProgress(UserProgressEntity(
+          id = "main_user",
+          dailyStreak = oldProgress.dailyStreak.coerceAtLeast(1),
+          lastActiveTimestamp = System.currentTimeMillis(),
+          scorePoints = newPoints,
+          totalQuestionsJoined = oldProgress.totalQuestionsJoined,
+          totalCorrectAnswers = oldProgress.totalCorrectAnswers
+        ))
+      }
+    }
+    _focusSecondsElapsed.value = 0
+    // Update self status to resting in the group
+    updateUserStatusInGroup(isFocused = false)
+  }
+
+  fun setFocusSubject(subject: String) {
+    _selectedFocusSubject.value = subject
+  }
+
+  fun addNewFocusSubject(subjectName: String) {
+    if (subjectName.isBlank()) return
+    val clean = subjectName.trim()
+    if (!_customFocusSubjects.value.contains(clean)) {
+      _customFocusSubjects.value = _customFocusSubjects.value + clean
+      val updatedMap = _focusSubjectMinutes.value.toMutableMap()
+      if (!updatedMap.containsKey(clean)) {
+        updatedMap[clean] = 0f
+      }
+      _focusSubjectMinutes.value = updatedMap
+    }
+  }
+
+  fun toggleFocusLock(active: Boolean) {
+    _isFocusLockActive.value = active
+  }
+
+  fun joinOrCreateGroup(roomName: String) {
+    _groupRoomName.value = roomName
+    _isUserInGroup.value = true
+  }
+
+  fun leaveStudyGroup() {
+    _isUserInGroup.value = false
+  }
+
+  fun addFriendToGroup(name: String, school: String) {
+    val newFriend = StudyGroupUser(
+      id = "custom_" + System.currentTimeMillis(),
+      name = name,
+      status = "🟢 專注中 | 數學",
+      isOnline = true,
+      focusedMinutesToday = (30..180).random(),
+      schoolTag = school
+    )
+    _onlineGroupUsers.value = _onlineGroupUsers.value + newFriend
+  }
+
+  private fun updateUserStatusInGroup(isFocused: Boolean) {
+    val currentSub = _selectedFocusSubject.value
+    _onlineGroupUsers.update { list ->
+      list.map { user ->
+        if (user.id == "g5") { // "你"
+          user.copy(
+            status = if (isFocused) "🟢 專注中 | $currentSub" else "🟡 休息中",
+            isOnline = true,
+            focusedMinutesToday = user.focusedMinutesToday + (_focusSecondsElapsed.value / 60)
+          )
+        } else {
+          user
+        }
+      }
     }
   }
 
@@ -643,4 +795,13 @@ data class GradeForecast(
   val diffText: String,
   val progressFraction: Float,
   val scorePercentage: Int
+)
+
+data class StudyGroupUser(
+  val id: String,
+  val name: String,
+  val status: String,
+  val isOnline: Boolean,
+  val focusedMinutesToday: Int,
+  val schoolTag: String
 )

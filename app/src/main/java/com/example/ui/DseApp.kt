@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -30,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import android.widget.Toast
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,110 +73,127 @@ fun DseMainApp(viewModel: DseViewModel) {
   val activeSubject by viewModel.selectedSubject.collectAsStateWithLifecycle()
   val completedQuestions by viewModel.completedQuestions.collectAsStateWithLifecycle()
 
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-              imageVector = Icons.Default.TrendingUp,
-              contentDescription = "Logo",
-              tint = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.size(28.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              "DSE Level Up",
-              fontWeight = FontWeight.Bold,
-              fontFamily = FontFamily.SansSerif,
-              letterSpacing = 0.5.sp
-            )
-          }
-        },
-        actions = {
-          Row(
-            modifier = Modifier
-              .padding(end = 12.dp)
-              .background(
-                color = MaterialTheme.colorScheme.primaryContainer,
-                shape = RoundedCornerShape(16.dp)
+  // Premium states
+  val isTimerRunning by viewModel.isFocusTimerRunning.collectAsStateWithLifecycle()
+  val isLockActive by viewModel.isFocusLockActive.collectAsStateWithLifecycle()
+  val focusSec by viewModel.focusSecondsElapsed.collectAsStateWithLifecycle()
+  val focusSub by viewModel.selectedFocusSubject.collectAsStateWithLifecycle()
+
+  Box(modifier = Modifier.fillMaxSize()) {
+    Scaffold(
+      topBar = {
+        TopAppBar(
+          title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(
+                imageVector = Icons.Default.TrendingUp,
+                contentDescription = "Logo",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
               )
-              .padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Icon(
-              imageVector = Icons.Default.LocalFireDepartment,
-              contentDescription = "Streak",
-              tint = Color(0xFFFF5722),
-              modifier = Modifier.size(20.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-              "${progress?.dailyStreak ?: 1} 日",
-              fontWeight = FontWeight.ExtraBold,
-              color = MaterialTheme.colorScheme.onPrimaryContainer,
-              fontSize = 14.sp
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(
+                "DSE Level Up",
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+                letterSpacing = 0.5.sp
+              )
+            }
+          },
+          actions = {
+            Row(
+              modifier = Modifier
+                .padding(end = 12.dp)
+                .background(
+                  color = MaterialTheme.colorScheme.primaryContainer,
+                  shape = RoundedCornerShape(16.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Icon(
+                imageVector = Icons.Default.LocalFireDepartment,
+                contentDescription = "Streak",
+                tint = Color(0xFFFF5722),
+                modifier = Modifier.size(20.dp)
+              )
+              Spacer(modifier = Modifier.width(4.dp))
+              Text(
+                "${progress?.dailyStreak ?: 1} 日",
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontSize = 14.sp
+              )
+            }
+          },
+          colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+          )
+        )
+      },
+      bottomBar = {
+        NavigationBar(
+          containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+        ) {
+          DseScreen.values().forEach { tab ->
+            NavigationBarItem(
+              selected = currentTab == tab,
+              onClick = { currentTab = tab },
+              icon = { Icon(imageVector = tab.icon, contentDescription = tab.title) },
+              label = { Text(tab.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+              modifier = Modifier.testTag("nav_${tab.name.lowercase()}")
             )
           }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-          containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
-        )
-      )
-    },
-    bottomBar = {
-      NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+        }
+      },
+      contentWindowInsets = WindowInsets.safeDrawing
+    ) { innerPadding ->
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(innerPadding)
+          .background(MaterialTheme.colorScheme.background)
       ) {
-        DseScreen.values().forEach { tab ->
-          NavigationBarItem(
-            selected = currentTab == tab,
-            onClick = { currentTab = tab },
-            icon = { Icon(imageVector = tab.icon, contentDescription = tab.title) },
-            label = { Text(tab.title, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            modifier = Modifier.testTag("nav_${tab.name.lowercase()}")
-          )
-        }
-      }
-    },
-    contentWindowInsets = WindowInsets.safeDrawing
-  ) { innerPadding ->
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(innerPadding)
-        .background(MaterialTheme.colorScheme.background)
-    ) {
-      AnimatedContent(
-        targetState = currentTab,
-        transitionSpec = {
-          fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(220))
-        },
-        label = "TabTransition"
-      ) { targetScreen ->
-        when (targetScreen) {
-          DseScreen.DASHBOARD -> DashboardScreen(
-            viewModel = viewModel,
-            progress = progress ?: com.example.database.UserProgressEntity(),
-            badges = badges,
-            completedList = completedQuestions,
-            onStartPractice = { subject ->
-              viewModel.changeSubject(subject)
+        AnimatedContent(
+          targetState = currentTab,
+          transitionSpec = {
+            fadeIn(animationSpec = tween(220)) togetherWith fadeOut(animationSpec = tween(220))
+          },
+          label = "TabTransition"
+        ) { targetScreen ->
+          when (targetScreen) {
+            DseScreen.DASHBOARD -> DashboardScreen(
+              viewModel = viewModel,
+              progress = progress ?: com.example.database.UserProgressEntity(),
+              badges = badges,
+              completedList = completedQuestions,
+              onStartPractice = { subject ->
+                viewModel.changeSubject(subject)
+                currentTab = DseScreen.PRACTICE
+              },
+              onNavigateToTab = { currentTab = it },
+              getGradeForecast = { viewModel.getPredictedGradeAndCutoff(it) }
+            )
+            DseScreen.BANK -> BankScreen(viewModel = viewModel)
+            DseScreen.PRACTICE -> PracticeScreen(viewModel = viewModel)
+            DseScreen.MISTAKES -> MistakesScreen(viewModel = viewModel, mistakes = mistakes, onGoToChallenge = {
+              viewModel.changeSubject(it)
               currentTab = DseScreen.PRACTICE
-            },
-            onNavigateToTab = { currentTab = it },
-            getGradeForecast = { viewModel.getPredictedGradeAndCutoff(it) }
-          )
-          DseScreen.BANK -> BankScreen(viewModel = viewModel)
-          DseScreen.PRACTICE -> PracticeScreen(viewModel = viewModel)
-          DseScreen.MISTAKES -> MistakesScreen(viewModel = viewModel, mistakes = mistakes, onGoToChallenge = {
-            viewModel.changeSubject(it)
-            currentTab = DseScreen.PRACTICE
-          })
-          DseScreen.REVISION -> RevisionScreen()
-          DseScreen.LEADERBOARD -> LeaderboardScreen(userPoints = progress?.scorePoints ?: 120)
+            })
+            DseScreen.REVISION -> RevisionScreen()
+            DseScreen.LEADERBOARD -> LeaderboardScreen(userPoints = progress?.scorePoints ?: 120)
+          }
         }
       }
+    }
+
+    // IMMERSIVE APPLOCK OVERLAY
+    if (isTimerRunning && isLockActive) {
+      ImmersiveFocusLockOverlay(
+        focusSec = focusSec,
+        subject = focusSub,
+        onUnlock = { viewModel.stopFocusTimer() }
+      )
     }
   }
 }
@@ -305,6 +325,26 @@ fun DashboardScreen(
     // Target DSE Subjects Selector Card (Dropdown Component)
     item {
       TargetSubjectsSelectorCard()
+    }
+
+    // DSE Tip of the Day and Positive Encouraging Notification System Card
+    item {
+      DseNotificationSystemCard(progress = progress)
+    }
+
+    // Premium custom Study Focus Timer hub card
+    item {
+      StudyFocusHubCard(viewModel = viewModel)
+    }
+
+    // Premium custom Online Study Groups card with real-time leaderboard
+    item {
+      OnlineStudyGroupsCard(viewModel = viewModel)
+    }
+
+    // Personalized DSE Strategy Planner Card
+    item {
+      PersonalizedDseStudyPlanCard(progress = progress)
     }
 
     // 1. Weekly efficiency and timer trends chart
@@ -739,6 +779,940 @@ data class SubjectSelectionItem(
   val englishName: String,
   val color: Color
 )
+
+// --- NEW COMPONENT: PERSONALIZED STUDY PLANNER ---
+@Composable
+fun PersonalizedDseStudyPlanCard(progress: com.example.database.UserProgressEntity) {
+  val context = LocalContext.current
+  var examTargetMonth by remember { mutableStateOf("2027_04") } // "2027_04" | "2026_11" | "2028_04"
+  var studyIntensity by remember { mutableStateOf("balanced") } // "relaxed" | "balanced" | "hardcore"
+  var selectedStudySubjects by remember { mutableStateOf(setOf("math", "english", "physics")) }
+  
+  // Reminders state
+  var morningReminder by remember { mutableStateOf(false) }
+  var afternoonReminder by remember { mutableStateOf(false) }
+  var eveningReminder by remember { mutableStateOf(false) }
+
+  var generatedTimeTable by remember { mutableStateOf(false) }
+  var showSecurityGuide by remember { mutableStateOf(false) }
+
+  val subjectPriorityData = listOf(
+    Triple("math", "📐 數學必修部分 (P0)", Color(0xFF1E88E5)),
+    Triple("m1m2", "📐 數學 M1/M2 (P0)", Color(0xFF1E88E5)),
+    Triple("physics", "⚡ 物理科 (選修) (P1)", Color(0xFF00ACC1)),
+    Triple("english", "🇬🇧 英國語文 (P1)", Color(0xFF43A047)),
+    Triple("chinese", "🇨🇳 中國語文 (P2)", Color(0xFFE53935)),
+    Triple("bafs", "📊 BAFS / ICT (P2)", Color(0xFF8E24AA)),
+    Triple("humanities", "📚 中國歷史/歷史/地理 (P3)", Color(0xFFF57C00))
+  )
+
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("personalized_planner_card"),
+    colors = CardDefaults.cardColors(
+      containerColor = MaterialTheme.colorScheme.surface
+    ),
+    border = androidx.compose.foundation.BorderStroke(
+      width = 1.dp,
+      color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    )
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+      // Title
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Icon(
+            imageVector = Icons.Default.CalendarToday,
+            contentDescription = "Planner Icon",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp)
+          )
+          Text(
+            "🎯 DSE 個人專屬衝刺學習計畫",
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 16.sp,
+            color = MaterialTheme.colorScheme.primary
+          )
+        }
+        Box(
+          modifier = Modifier
+            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+          Text(
+            "Beta",
+            fontWeight = FontWeight.Bold,
+            fontSize = 10.sp,
+            color = MaterialTheme.colorScheme.onPrimaryContainer
+          )
+        }
+      }
+
+      Text(
+        "根據預計考試倒數、學科優先級 (P0-P3) 及您當下的多巴胺題庫進度，一鍵為您客製化高效溫習日程表與定時複習提醒。",
+        fontSize = 12.sp,
+        color = Color.DarkGray,
+        lineHeight = 16.sp
+      )
+
+      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+      // 1. Expected test date selection
+      Text("🗓️ 選擇您的預計 DSE 考試日程目標：", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        val targets = listOf(
+          "2026_11" to "2026年11月 (高壓高分期)",
+          "2027_04" to "2027年04月 (常規衝刺期)",
+          "2028_04" to "2028年04月 (穩打穩紮期)"
+        )
+        targets.forEach { (key, title) ->
+          val active = examTargetMonth == key
+          Button(
+            onClick = { examTargetMonth = key },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+              contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+            ),
+            modifier = Modifier.weight(1f).height(38.dp),
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+          ) {
+            Text(
+              title.split(" ").first(),
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold
+            )
+          }
+        }
+      }
+
+      // Display countdown badge
+      val countdownDays = when (examTargetMonth) {
+        "2026_11" -> 145
+        "2027_04" -> 298
+        else -> 662
+      }
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+          .padding(10.dp)
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.Timer,
+            contentDescription = "Countdown",
+            tint = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.size(16.dp)
+          )
+          Text(
+            "學考倒計時：距離目標考試月份還有約 ",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+          )
+          Text(
+            "$countdownDays 天",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Black,
+            color = Color(0xFFE53935)
+          )
+        }
+      }
+
+      // 2. Study Intensity Choice
+      Text("⚡ 選擇每日學習強度分度：", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        val intensities = listOf(
+          "relaxed" to "🌱 奠基 (1-2hr)",
+          "balanced" to "⚖️ 均衡 (3-4hr)",
+          "hardcore" to "🩸 地獄 (6hr+)"
+        )
+        intensities.forEach { (key, label) ->
+          val active = studyIntensity == key
+          Card(
+            colors = CardDefaults.cardColors(
+              containerColor = if (active) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+            ),
+            modifier = Modifier
+              .weight(1f)
+              .clickable { studyIntensity = key }
+              .border(
+                1.dp,
+                if (active) MaterialTheme.colorScheme.secondary else Color.LightGray.copy(alpha = 0.3f),
+                RoundedCornerShape(8.dp)
+              )
+          ) {
+            Box(
+              modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Text(
+                label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
+          }
+        }
+      }
+
+      // 3. Subject prioritizations selections checkboxes
+      Text("📚 選擇納入計畫的考驗學科：", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+      ) {
+        subjectPriorityData.forEach { (id, label, color) ->
+          val checked = selectedStudySubjects.contains(id)
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable { 
+                selectedStudySubjects = if (checked) selectedStudySubjects - id else selectedStudySubjects + id
+              },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              Box(modifier = Modifier.size(8.dp).background(color, CircleShape))
+              Text(label, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+            Checkbox(
+              checked = checked,
+              onCheckedChange = { isChecked ->
+                selectedStudySubjects = if (checked) selectedStudySubjects - id else selectedStudySubjects + id
+              },
+              modifier = Modifier.size(32.dp).testTag("select_plan_subject_$id")
+            )
+          }
+        }
+      }
+
+      // 4. Generate Button
+      Button(
+        onClick = { generatedTimeTable = true },
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(44.dp)
+          .testTag("gen_plan_btn")
+      ) {
+        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = "Gen", modifier = Modifier.size(16.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text("⚡ 智能生成 DSE 專屬計畫與溫習軸", fontWeight = FontWeight.ExtraBold, fontSize = 13.sp)
+      }
+
+      // 5. Revealed generated plan timeline
+      if (generatedTimeTable) {
+        Card(
+          colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+          ),
+          border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+          modifier = Modifier.fillMaxWidth().testTag("generated_plan_output_card")
+        ) {
+          Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              Icon(imageVector = Icons.Default.WorkspacePremium, contentDescription = "Trophy", tint = Color(0xFFFFB300), modifier = Modifier.size(20.dp))
+              Text("🏆 AI 衝刺戰略規劃配置", fontWeight = FontWeight.Black, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            }
+
+            // Real progress diagnose
+            val progressReport = if (progress.totalCorrectAnswers < 5) {
+              "💡 開闢奠基期：當下題目進度偏少 (${progress.totalCorrectAnswers} 題)。戰略優先【P0必修數學】的即時 MCQ 對抗，夯實 12 大邏輯框架。在此階段不應盲目刷長題，必須以核心題庫中的 Transformation / Correct Method 概念關聯先行。"
+            } else {
+              "🚀 衝刺提分期：你已解鎖多於 ${progress.totalCorrectAnswers} 題正確作答！進度十分優秀。現在建議開啟【長題目 Part B / Sec A2】自主考官模式自評 (Marking Scheme 步驟分精確比對)，藉由勾選 M/A/F 分值克服粗心失分。"
+            }
+            Text(
+              progressReport,
+              fontSize = 11.sp,
+              color = MaterialTheme.colorScheme.onPrimaryContainer,
+              lineHeight = 15.sp,
+              fontWeight = FontWeight.Medium
+            )
+
+            HorizontalDivider(color = Color.LightGray.copy(alpha = 0.3f))
+
+            // Time schedule list
+            val scheduleSteps = when (studyIntensity) {
+              "relaxed" -> listOf(
+                "08:30 - 09:30" to "📐 核心 DSE 數學邏輯框架 MCQ 進擊 (3題 / 累積 30 分)",
+                "16:30 - 17:30" to "🧪 理科 P1 (物理/化學/生物) 單選速刷與 AI 詳解 (20門概念核對)"
+              )
+              "balanced" -> listOf(
+                "08:00 - 09:30" to "📐 P0 核心數學 / 延伸 M1/M2 系統化對抗 (40分鐘概念 + 4題挑戰)",
+                "15:00 - 16:30" to "🧪 P1 理科 / 英文常規閱讀模擬題 (深入研讀神級影片精析)",
+                "21:00 - 22:00" to "📋 錯題本 (Mistakes) 閉環回放測試：手寫 Marking Scheme 比對"
+              )
+              else -> listOf(
+                "07:30 - 09:30" to "📐 數學/M1/M2 地獄限時答題 (P0 加倍多巴胺，做完 10 道題)",
+                "10:30 - 12:30" to "🇬🇧 英文 / 中文必修突破 (高難度句型拆解，AI 口試/寫作自檢)",
+                "14:30 - 17:00" to "🧪 物理/化學 P1 熱門考點重慶、真切做題！100% 勾勒 12 分題草稿紙",
+                "20:30 - 23:00" to "🌌 全方位弱點與歷屆真題改寫 (AI 真題導師逐行精析 + 錯題精雕)"
+              )
+            }
+
+            Text("📅 客製化 DSE 溫習日程推演：", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            scheduleSteps.forEach { (timeSpan, activityText) ->
+              Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Text(
+                  timeSpan,
+                  fontFamily = FontFamily.Monospace,
+                  fontSize = 11.sp,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.width(90.dp)
+                )
+                Text(
+                  activityText,
+                  fontSize = 11.sp,
+                  color = Color.Black,
+                  lineHeight = 14.sp
+                )
+              }
+            }
+          }
+        }
+      }
+
+      // 6. Push Reminders Checkers
+      Text("🔔 配置每日定期衝刺複習推送提醒：", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+          .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        val remindersList = listOf(
+          Triple("morning", "🌅 早上 08:30 基礎常規題訓練 (建立多巴胺習慣)", morningReminder),
+          Triple("afternoon", "🌇 下午 16:30 理科難套題衝刺 (Method Marks 分數搶攻)", afternoonReminder),
+          Triple("evening", "🌌 晚上 21:00 錯題本 AI 自動回放複溫", eveningReminder)
+        )
+
+        remindersList.forEach { (id, label, stateValue) ->
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+          ) {
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+            Switch(
+              checked = stateValue,
+              onCheckedChange = { isChecked ->
+                when (id) {
+                  "morning" -> morningReminder = isChecked
+                  "afternoon" -> afternoonReminder = isChecked
+                  "evening" -> eveningReminder = isChecked
+                }
+                val text = if (isChecked) "已成功啟用「$label」！自律成就理想等級 5** 🚀" else "已關閉提醒設定"
+                Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+              },
+              modifier = Modifier.testTag("switch_reminder_$id")
+            )
+          }
+        }
+      }
+
+      HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+
+      // 7. Security Classroom section
+      Card(
+        colors = CardDefaults.cardColors(
+          containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        ),
+        modifier = Modifier.fillMaxWidth().testTag("security_classroom_card")
+      ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth().clickable { showSecurityGuide = !showSecurityGuide },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+              Icon(imageVector = Icons.Default.Shield, contentDescription = "Security", tint = Color(0xFFE53935), modifier = Modifier.size(18.dp))
+              Text("🔒 [DSE 防線] AI Token 防偷與系統安全維護課堂", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFFC62828))
+            }
+            Icon(
+              imageVector = if (showSecurityGuide) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+              contentDescription = "Expand",
+              tint = Color.Gray,
+              modifier = Modifier.size(16.dp)
+            )
+          }
+
+          if (showSecurityGuide) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+              "作為 HKDSE Level Up 的核心安全課堂，以下為防止 AI tokens 被惡意擷取/帳號被 Hack 的三大終極防禦指引：",
+              fontSize = 11.sp,
+              color = Color.DarkGray,
+              lineHeight = 15.sp
+            )
+
+            // Tip 1
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+              Text("❓ Q1：如何防範用戶惡意刷屏並偷走我們的 Gemini SDK API Token？", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+              Spacer(modifier = Modifier.height(2.dp))
+              Box(
+                modifier = Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(4.dp)).padding(8.dp)
+              ) {
+                Text(
+                  "🟢 專家解答：絕對不能把 API Key 明文寫在主程式代碼中！應該使用 Firebase AI Server-Side (雲端安全中轉) 或在後端伺服器 (Node.js/Spring Boot) 中封裝 API，並加入 Rate Limiting 限流機制，限制每個用戶 ID 每分鐘最多只可發送 3 次 AI 詢問。本 App 通過 BuildConfig 與 AI Studio Secrets 重重鎖定！",
+                  fontSize = 10.sp,
+                  color = Color.DarkGray,
+                  lineHeight = 13.sp
+                )
+              }
+            }
+
+            // Tip 2
+            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+              Text("❓ Q2：如何保障我們的 Room 即時歷史與珍貴 DSE 真題庫不被逆向工程打包？", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+              Spacer(modifier = Modifier.height(2.dp))
+              Box(
+                modifier = Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(4.dp)).padding(8.dp)
+              ) {
+                Text(
+                  "🟢 專家解答：1) 在 ProGuard / R8 中啟用程式碼混淆 (Obfuscation)，防止黑客使用 JADX 等反編譯器直接閱讀源碼。2) 對 Room 數據庫進行 SQLCipher 加密，這樣在 Root 手機中撈走數據庫也會是亂碼。3) 本地真題庫與遠端備份只採用 HTTPS 加上 SSL Pinning 傳輸保護，確保中間人攻擊 (MITM) 無法抓包。",
+                  fontSize = 10.sp,
+                  color = Color.DarkGray,
+                  lineHeight = 13.sp
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// --- NEW COMPONENT: DSE DAILY TIPS & ENCOURAGING QUOTES NOTIFICATION SYSTEM ---
+@Composable
+fun DseNotificationSystemCard(progress: com.example.database.UserProgressEntity) {
+  val context = LocalContext.current
+  var activeCategory by remember { mutableStateOf("tips") } // "tips" | "quotes"
+  var currentTipIndex by remember { mutableStateOf(0) }
+  var currentQuoteIndex by remember { mutableStateOf(0) }
+  
+  // Notification Toggles
+  var morningAlertEnabled by remember { mutableStateOf(true) }
+  var eveningAlertEnabled by remember { mutableStateOf(false) }
+
+  // Dialog State
+  var showDopamineDialog by remember { mutableStateOf(false) }
+
+  // Lists definitions
+  val examTips = listOf(
+    "💡 答卷時間管理：Maths Paper 1 丙部（Section B）佔分極重，建議預留 75 分鐘作答，Section A1 及 A2 則以 50-60 分鐘內秒殺為目標。",
+    "📝 步驟分重要性：在 Section A2 及 B 的大長題中，只要寫出正確的公式代入（如 m_L1 × m_L2 = -1）即可獲得 Method Mark (M)，即使最終答案算錯，也能穩拿基本分！",
+    "⚡ 圓的方程 (Equation of Circle) 必殺技：若方程式為 x² + y² + Dx + Ey + F = 0，圓心坐標必為 (-D/2, -E/2)，圓半徑為 √( (D/2)² + (E/2)² - F )。留意 D² + E² - 4F 必須大於 0 才是實心圓。",
+    "📚 等比數列 (Geometric Sequence) 陷阱：當求 ∑ T_n 無限項之和時，必須確保公比 |r| < 1。公式為 S_∞ = a / (1-r)。若 r ≥ 1，此數列發散，並無無限項之和！",
+    "🇬🇧 英文科 Part A 逆襲法：在作答 Reading 時，先仔細閱讀題目（Questions）並圈出關鍵詞（Keywords）與同義詞（Synonyms），然後快速定位段落，切忌一字一句盲目死讀。",
+    "🧪 理科解題對稱原理：看到複雜的幾何、變分或物理系統時，先嘗試代入特殊值（如 x=0, x=1）或尋找對稱軸（Symmetry），這往往能幫你在 MCQ 中 10 秒鎖定答案！"
+  )
+
+  val quotes = listOf(
+    "🌟 「不看昨天的遺憾，不看明天的迷茫，只看今時今日，你手下的每一道題都是你踏往 5** 階梯的基石！」",
+    "🔥 「無人能為你的 DSE 畫上句號，除了你自己。再算錯一次也沒關係，錯題本是強者的盔甲，每一次重來都是底層邏輯的昇華！」",
+    "🌈 「每一滴在草稿紙上流過的汗水，都會在放榜那天折射出璀璨的光芒。加油，未來的狀元，你離理想大學只剩最後這一戰！」",
+    "🏆 「DSE 考的不是考生的智商，而是大腦在限時壓力下的抗干擾程度。保持呼吸，穩定節奏，你比自己想像的更強大！」",
+    "💪 「把大目標拆解成今天的 3 個 Dopamine 任務。每天進步 1%，只要有計畫，在放榜那天你定將迎來脫胎換骨的自己！」"
+  )
+
+  // Current active text & index
+  val isTips = activeCategory == "tips"
+  val activeText = if (isTips) examTips[currentTipIndex] else quotes[currentQuoteIndex]
+  val activeIndexToShow = if (isTips) currentTipIndex + 1 else currentQuoteIndex + 1
+  val totalItemsToShow = if (isTips) examTips.size else quotes.size
+
+  // Pulse animation for the notification bell
+  val infiniteTransition = rememberInfiniteTransition(label = "bell_pulse")
+  val bellScale by infiniteTransition.animateFloat(
+    initialValue = 1f,
+    targetValue = 1.15f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+      repeatMode = RepeatMode.Reverse
+    ),
+    label = "scale"
+  )
+
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("dse_notification_card"),
+    colors = CardDefaults.cardColors(
+      containerColor = MaterialTheme.colorScheme.surface
+    ),
+    border = androidx.compose.foundation.BorderStroke(
+      width = 1.dp,
+      color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    )
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+      // Header item
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          // Bell Icon pulsing with micro-interaction
+          Box(
+            modifier = Modifier
+              .size(36.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.primaryContainer)
+              .padding(6.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.NotificationsActive,
+              contentDescription = "Alert Bell",
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier
+                .size(20.dp)
+                .scale(bellScale)
+            )
+          }
+
+          Column {
+            Text(
+              "📢 DSE 每日晨光通知 & 5** 密技",
+              fontWeight = FontWeight.ExtraBold,
+              fontSize = 15.sp,
+              color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+              "今日能量回報：你今天比預計多前進了一步！",
+              fontSize = 11.sp,
+              color = Color.Gray
+            )
+          }
+        }
+        
+        // Circular Unread Badge count indicator
+        Box(
+          modifier = Modifier
+            .background(Color(0xFFE53935), RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+        ) {
+          Text(
+            "NEW",
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 9.sp
+          )
+        }
+      }
+
+      // Filter selector tabs
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        val options = listOf(
+          "tips" to "💡 5** 必讀應試神技",
+          "quotes" to "🌟 狀元勵志鼓勵能量"
+        )
+        options.forEach { (cat, title) ->
+          val active = activeCategory == cat
+          Button(
+            onClick = { activeCategory = cat },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+              contentColor = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+            ),
+            modifier = Modifier
+              .weight(1f)
+              .height(36.dp)
+              .testTag("notification_tab_$cat"),
+            contentPadding = PaddingValues(0.dp)
+          ) {
+            Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          }
+        }
+      }
+
+      // Main Quote Display Card
+      Card(
+        colors = CardDefaults.cardColors(
+          containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+          width = 1.dp,
+          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(
+          modifier = Modifier.padding(14.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          // Quote metadata
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text(
+              if (isTips) "📌 應試錦囊" else "🔥 候選人正能量",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+              "[$activeIndexToShow / $totalItemsToShow]",
+              fontSize = 10.sp,
+              fontFamily = FontFamily.Monospace,
+              color = Color.Gray,
+              fontWeight = FontWeight.Bold
+            )
+          }
+
+          // Quote body text with large visual quotation marks
+          Box(modifier = Modifier.fillMaxWidth()) {
+            Text(
+              "“",
+              fontSize = 32.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+              modifier = Modifier.align(Alignment.TopStart).offset(x = (-4).dp, y = (-8).dp)
+            )
+            
+            Text(
+              activeText,
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Medium,
+              color = Color.DarkGray,
+              lineHeight = 17.sp,
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+          }
+          
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(4.dp))
+              .padding(8.dp)
+          ) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              Icon(
+                imageVector = Icons.Default.Recommend,
+                contentDescription = "Recommend",
+                tint = Color(0xFF43A047),
+                modifier = Modifier.size(14.dp)
+              )
+              Text(
+                if (isTips) "戰術大師給予積極看點：溫習此段可提高對抗盲區能力！(+15% 信心評估)" else "本日激勵回升度：不論進度如何，你正行在正確的突圍之路上！",
+                fontSize = 9.sp,
+                color = Color(0xFF2E7D32),
+                fontWeight = FontWeight.Bold
+              )
+            }
+          }
+        }
+      }
+
+      // Control Action Buttons Row
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        // Next Button with circular cycle
+        Button(
+          onClick = {
+            if (isTips) {
+              currentTipIndex = (currentTipIndex + 1) % examTips.size
+            } else {
+              currentQuoteIndex = (currentQuoteIndex + 1) % quotes.size
+            }
+          },
+          colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.secondary
+          ),
+          modifier = Modifier
+            .weight(1.1f)
+            .height(38.dp)
+            .testTag("next_tip_button")
+        ) {
+          Icon(
+            imageVector = Icons.Default.NavigateNext,
+            contentDescription = "Next Tip",
+            modifier = Modifier.size(16.dp)
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          Text("下一則 Next", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+
+        // Copy item to clipboard
+        IconButton(
+          onClick = {
+            val systemClipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = android.content.ClipData.newPlainText("DSETip", activeText)
+            systemClipboard.setPrimaryClip(clip)
+            Toast.makeText(context, "📋 已成功複製 DSE 貼心密語！快去分享給戰友！✨", Toast.LENGTH_SHORT).show()
+          },
+          modifier = Modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .testTag("copy_tip_button")
+        ) {
+          Icon(
+            imageVector = Icons.Default.ContentCopy,
+            contentDescription = "Copy Text",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+          )
+        }
+
+        // Dopamine Booster dialog trigger button (Boost!)
+        Button(
+          onClick = { showDopamineDialog = true },
+          colors = ButtonDefaults.buttonColors(
+            containerColor = Color(0xFFE53935) // Deep vivid Red for Dopamine pulse
+          ),
+          modifier = Modifier
+            .weight(1.3f)
+            .height(38.dp)
+            .testTag("dopamine_boost_button")
+        ) {
+          Icon(
+            imageVector = Icons.Default.Favorite,
+            contentDescription = "Dopamine",
+            tint = Color.White,
+            modifier = Modifier.size(14.dp)
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          Text("💖 獲取能量 Boost", fontSize = 11.sp, fontWeight = FontWeight.Black)
+        }
+      }
+
+      // Notification schedule configuration
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+          .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.Alarm,
+              contentDescription = "Alarm Icon",
+              tint = MaterialTheme.colorScheme.secondary,
+              modifier = Modifier.size(15.dp)
+            )
+            Text(
+              "每日晨光早報推送 (08:00 AM)",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+          Switch(
+            checked = morningAlertEnabled,
+            onCheckedChange = { isChecked ->
+              morningAlertEnabled = isChecked
+              val text = if (isChecked) "🌅 朝陽晨光提醒已啟：明早 08:00 我們準時見！" else "已關閉晨鳴通知"
+              Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+            },
+            modifier = Modifier
+              .scale(0.85f)
+              .testTag("notification_switch_morning")
+          )
+        }
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.OfflineBolt,
+              contentDescription = "Bolt Alarm",
+              tint = MaterialTheme.colorScheme.secondary,
+              modifier = Modifier.size(15.dp)
+            )
+            Text(
+              "晚自修錯題極速播報 (10:00 PM)",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+          }
+          Switch(
+            checked = eveningAlertEnabled,
+            onCheckedChange = { isChecked ->
+              eveningAlertEnabled = isChecked
+              val text = if (isChecked) "🌌 錯題本 AI 總複習通知開啟：每晚十點為您智能復盤！" else "已關閉夜闌通知"
+              Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+            },
+            modifier = Modifier
+              .scale(0.85f)
+              .testTag("notification_switch_evening")
+          )
+        }
+      }
+    }
+  }
+
+  // Dopamine dialog implementation
+  if (showDopamineDialog) {
+    Dialog(onDismissRequest = { showDopamineDialog = false }) {
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(16.dp)
+          .testTag("dopamine_booster_dialog"),
+        border = androidx.compose.foundation.BorderStroke(2.dp, Color(0xFFFFD54F)) // Glowing Yellow outline!
+      ) {
+        Column(
+          modifier = Modifier.padding(20.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+          // Large beautiful Trophy inside dialogue
+          Box(
+            modifier = Modifier
+              .size(80.dp)
+              .clip(CircleShape)
+              .background(
+                Brush.radialGradient(
+                  colors = listOf(Color(0xFFFFF9C4), Color(0xFFFFEB3B), Color(0xFFFBC02D))
+                )
+              ),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.WorkspacePremium,
+              contentDescription = "Huge Award Trophy",
+              tint = Color(0xFFE65100),
+              modifier = Modifier.size(48.dp)
+            )
+          }
+
+          Text(
+            "💖 多巴胺爆發！考生激勵回饋",
+            fontWeight = FontWeight.Black,
+            fontSize = 16.sp,
+            color = MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center
+          )
+
+          // Diagnostic and progress-customized motivational messaging
+          val encourageMessage = when {
+            progress.scorePoints < 20 -> {
+              "🌟「萬丈高樓平地起，你目前積蓄了 ${progress.scorePoints} 積分，雖然起步不久，但每一題的失誤和重組都是實力裂變的起點！放下負擔，今天再做對 1 題就是巨大的突破！」"
+            }
+            progress.scorePoints < 100 -> {
+              "🚀「太棒了！你已成功在 DSE App 中獲取 ${progress.scorePoints} XP 本土優良分！這意味著你在 DSE 考綱的底層變換邏輯中已經邁出了堅實的一大步。保持這個狀態，5** 只是努力的附贈品！」"
+            }
+            else -> {
+              "✨「你累計答對多道題目，多巴胺能量值高達 ${progress.scorePoints} XP！你的努力和學習進度完全在 5** 的最頂端區間。自律和專注是你的雙翼，請繼續穩健落筆，一戰成名！」"
+            }
+          }
+
+          Text(
+            encourageMessage,
+            fontSize = 11.sp,
+            color = Color.DarkGray,
+            textAlign = TextAlign.Center,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 8.dp)
+          )
+
+          // Custom positive stats gauge
+          Column(
+            modifier = Modifier
+              .fillMaxWidth()
+              .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+              .padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+          ) {
+            Text(
+              "💪 您的 DSE 實力值今日預判",
+              fontSize = 10.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+              "「持之以恆：超前於戰役中 92% 的候選候考人！」",
+              fontSize = 11.sp,
+              fontWeight = FontWeight.ExtraBold,
+              color = Color(0xFF1B5E20)
+            )
+          }
+
+          // Close confirm button
+          Button(
+            onClick = { showDopamineDialog = false },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.primary
+            ),
+            modifier = Modifier
+              .fillMaxWidth()
+              .height(44.dp)
+          ) {
+            Text("✅ 吸收這波正能量，繼續專注複習！", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+          }
+        }
+      }
+    }
+  }
+}
 
 // --- NEW COMPONENT: TIMER AND CHART TRENDS ---
 @Composable
@@ -1336,6 +2310,12 @@ fun PracticeScreen(viewModel: DseViewModel) {
   var elapsedSeconds by remember { mutableStateOf(0) }
   val scope = rememberCoroutineScope()
 
+  // Practice Modes and Automatic Grading Engine State
+  var practiceMode by remember { mutableStateOf("mcq") } // "mcq" | "short_answer" | "long"
+  var completedStepsState by remember(currentQ?.id) { mutableStateOf(setOf<Int>()) }
+  var customTypedInput by remember(currentQ?.id) { mutableStateOf("") }
+  var gradingFeedbackResult by remember(currentQ?.id) { mutableStateOf<com.example.viewmodel.GradingResult?>(null) }
+
   // Timer stopwatch logic
   LaunchedEffect(currentQ, answerVerified) {
     if (currentQ != null && !answerVerified) {
@@ -1364,6 +2344,10 @@ fun PracticeScreen(viewModel: DseViewModel) {
     selectedChoice = null
     answerVerified = false
     showCorrectVisualConfetti = false
+    completedStepsState = emptySet()
+    customTypedInput = ""
+    gradingFeedbackResult = null
+    practiceMode = "mcq"
   }
 
   Column(
@@ -1527,116 +2511,550 @@ fun PracticeScreen(viewModel: DseViewModel) {
           }
         }
 
-        // The four MCQ choices options list with ripple Feedback
-        val choices = listOf(
-          "A" to question.optionA,
-          "B" to question.optionB,
-          "C" to question.optionC,
-          "D" to question.optionD
-        )
-
-        items(choices) { (key, optionText) ->
-          val isSelected = selectedChoice == key
-          val correctKey = question.correctAnswer
-          val isCorrect = key == correctKey
-
-          val containerColor = when {
-            answerVerified && isSelected && isCorrect -> Color(0xFFD4EDDA) // Highlight success
-            answerVerified && isSelected && !isCorrect -> Color(0xFFF8D7DA) // Highlight fail
-            answerVerified && !isSelected && isCorrect -> Color(0xFFD4EDDA) // Guide correct
-            isSelected -> MaterialTheme.colorScheme.primaryContainer
-            else -> MaterialTheme.colorScheme.surface
-          }
-
-          val borderStrokeColor = when {
-            answerVerified && isSelected && isCorrect -> Color(0xFF28A745)
-            answerVerified && isSelected && !isCorrect -> Color(0xFFDC3545)
-            isSelected -> MaterialTheme.colorScheme.primary
-            else -> Color.LightGray.copy(alpha = 0.5f)
-          }
-
+        // --- practiceMode Tab Toggle Row ---
+        item {
           Card(
-            colors = CardDefaults.cardColors(containerColor = containerColor),
-            modifier = Modifier
-              .fillMaxWidth()
-              .shadow(2.dp, RoundedCornerShape(8.dp))
-              .clickable(enabled = !answerVerified) {
-                selectedChoice = key
-              }
-              .testTag("option_${key.lowercase()}")
+            colors = CardDefaults.cardColors(
+              containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            ),
+            modifier = Modifier.fillMaxWidth().testTag("practice_mode_card")
           ) {
             Row(
-              modifier = Modifier
-                .padding(14.dp)
-                .fillMaxWidth(),
-              verticalAlignment = Alignment.CenterVertically
+              modifier = Modifier.fillMaxWidth().padding(4.dp),
+              horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-              Box(
-                modifier = Modifier
-                  .size(28.dp)
-                  .background(
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.3f),
-                    shape = CircleShape
-                  ),
-                contentAlignment = Alignment.Center
-              ) {
-                Text(
-                  key,
-                  fontWeight = FontWeight.Black,
-                  fontSize = 13.sp,
-                  color = if (isSelected) Color.White else Color.Black
-                )
-              }
-              Spacer(modifier = Modifier.width(12.dp))
-              Text(
-                optionText,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.Black
+              val modes = listOf(
+                "mcq" to "🎯 MCQ 選擇題",
+                "short_answer" to "✏️ 填充題速填",
+                "long" to "📋 長題目自主批改"
               )
+              modes.forEach { (modeKey, title) ->
+                val active = practiceMode == modeKey
+                Card(
+                  colors = CardDefaults.cardColors(
+                    containerColor = if (active) MaterialTheme.colorScheme.primary else Color.Transparent
+                  ),
+                  modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = !answerVerified) {
+                      practiceMode = modeKey
+                    }
+                ) {
+                  Box(
+                    modifier = Modifier.padding(vertical = 8.dp).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Text(
+                      title,
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                  }
+                }
+              }
             }
           }
         }
 
-        // Verification Check Buttons
-        item {
-          Spacer(modifier = Modifier.height(10.dp))
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            Button(
-              onClick = {
-                if (selectedChoice == null) return@Button
-                val verdict = selectedChoice == question.correctAnswer
-                answerVerified = true
-                if (verdict) {
-                  showCorrectVisualConfetti = true
-                  viewModel.recordAnswer(question.id, true, timeSpentSeconds = elapsedSeconds)
-                } else {
-                  showMistakeDialog = true
-                  viewModel.recordAnswer(question.id, false, timeSpentSeconds = elapsedSeconds)
+        // --- Render Based on Selected Practice Mode ---
+        when (practiceMode) {
+          "mcq" -> {
+            val choices = listOf(
+              "A" to question.optionA,
+              "B" to question.optionB,
+              "C" to question.optionC,
+              "D" to question.optionD
+            )
+
+            items(choices) { (key, optionText) ->
+              val isSelected = selectedChoice == key
+              val correctKey = question.correctAnswer
+              val isCorrect = key == correctKey
+
+              val containerColor = when {
+                answerVerified && isSelected && isCorrect -> Color(0xFFD4EDDA) // Highlight success
+                answerVerified && isSelected && !isCorrect -> Color(0xFFF8D7DA) // Highlight fail
+                answerVerified && !isSelected && isCorrect -> Color(0xFFD4EDDA) // Guide correct
+                isSelected -> MaterialTheme.colorScheme.primaryContainer
+                else -> MaterialTheme.colorScheme.surface
+              }
+
+              val borderStrokeColor = when {
+                answerVerified && isSelected && isCorrect -> Color(0xFF28A745)
+                answerVerified && isSelected && !isCorrect -> Color(0xFFDC3545)
+                isSelected -> MaterialTheme.colorScheme.primary
+                else -> Color.LightGray.copy(alpha = 0.5f)
+              }
+
+              Card(
+                colors = CardDefaults.cardColors(containerColor = containerColor),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .shadow(2.dp, RoundedCornerShape(8.dp))
+                  .border(
+                    width = 1.dp,
+                    color = borderStrokeColor,
+                    shape = RoundedCornerShape(8.dp)
+                  )
+                  .clickable(enabled = !answerVerified) {
+                    selectedChoice = key
+                  }
+                  .testTag("option_${key.lowercase()}")
+              ) {
+                Row(
+                  modifier = Modifier
+                    .padding(14.dp)
+                    .fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Box(
+                    modifier = Modifier
+                      .size(28.dp)
+                      .background(
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.3f),
+                        shape = CircleShape
+                      ),
+                    contentAlignment = Alignment.Center
+                  ) {
+                    Text(
+                      key,
+                      fontWeight = FontWeight.Black,
+                      fontSize = 13.sp,
+                      color = if (isSelected) Color.White else Color.Black
+                    )
+                  }
+                  Spacer(modifier = Modifier.width(12.dp))
+                  Text(
+                    optionText,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.Black
+                  )
                 }
-              },
-              enabled = selectedChoice != null && !answerVerified,
-              modifier = Modifier
-                .weight(1f)
-                .testTag("submit_answer_btn")
-            ) {
-              Text("提交答案 (Instant Check)", fontWeight = FontWeight.Bold)
+              }
             }
 
-            if (answerVerified) {
-              Button(
-                onClick = {
-                  viewModel.nextQuestion()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                modifier = Modifier
-                  .weight(1f)
-                  .testTag("next_question_btn")
+            item {
+              Spacer(modifier = Modifier.height(6.dp))
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
               ) {
-                Text("下一挑戰題 🚀", fontWeight = FontWeight.Bold)
+                Button(
+                  onClick = {
+                    if (selectedChoice == null) return@Button
+                    val result = com.example.viewmodel.DseGradingProcessor.evaluateMcq(question, selectedChoice!!)
+                    gradingFeedbackResult = result
+                    answerVerified = true
+                    if (result.isCorrect) {
+                      showCorrectVisualConfetti = true
+                      viewModel.recordAnswer(question.id, true, timeSpentSeconds = elapsedSeconds)
+                    } else {
+                      showMistakeDialog = true
+                      viewModel.recordAnswer(question.id, false, timeSpentSeconds = elapsedSeconds)
+                    }
+                  },
+                  enabled = selectedChoice != null && !answerVerified,
+                  modifier = Modifier
+                    .weight(1f)
+                    .testTag("submit_answer_btn")
+                ) {
+                  Text("提交選擇題 (即時批改)", fontWeight = FontWeight.Bold)
+                }
+
+                if (answerVerified) {
+                  Button(
+                    onClick = { viewModel.nextQuestion() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                    modifier = Modifier
+                      .weight(1f)
+                      .testTag("next_question_btn")
+                  ) {
+                    Text("下一挑戰題 🚀", fontWeight = FontWeight.Bold)
+                  }
+                }
+              }
+            }
+          }
+
+          "short_answer" -> {
+            item {
+              Card(
+                colors = CardDefaults.cardColors(
+                  containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+                ),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+              ) {
+                Column(
+                  modifier = Modifier.padding(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                      imageVector = Icons.Default.Edit,
+                      contentDescription = "Short Answer Icon",
+                      tint = MaterialTheme.colorScheme.primary,
+                      modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      "請在下方手動填入你的最終答案表示式：",
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 13.sp,
+                      color = MaterialTheme.colorScheme.onSurface
+                    )
+                  }
+
+                  Text(
+                    "提示：請寫入精簡形式，例如: 「10/9」或「(1,0)」或直接輸入正確選項字母。",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                  )
+
+                  OutlinedTextField(
+                    value = customTypedInput,
+                    onValueChange = { if (!answerVerified) customTypedInput = it },
+                    placeholder = { Text("請在此填寫答案...", fontSize = 13.sp) },
+                    modifier = Modifier.fillMaxWidth().testTag("short_answer_input_text"),
+                    singleLine = true,
+                    enabled = !answerVerified
+                  )
+                }
+              }
+            }
+
+            item {
+              Spacer(modifier = Modifier.height(6.dp))
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Button(
+                  onClick = {
+                    if (customTypedInput.trim().isEmpty()) return@Button
+                    val result = com.example.viewmodel.DseGradingProcessor.evaluateShortAnswer(question, customTypedInput)
+                    gradingFeedbackResult = result
+                    answerVerified = true
+                    if (result.isCorrect) {
+                      showCorrectVisualConfetti = true
+                      viewModel.recordAnswer(question.id, true, timeSpentSeconds = elapsedSeconds)
+                    } else {
+                      showMistakeDialog = true
+                      viewModel.recordAnswer(question.id, false, timeSpentSeconds = elapsedSeconds)
+                    }
+                  },
+                  enabled = customTypedInput.trim().isNotEmpty() && !answerVerified,
+                  modifier = Modifier
+                    .weight(1f)
+                    .testTag("submit_short_answer_btn")
+                ) {
+                  Text("提交填充題 (智能比對)", fontWeight = FontWeight.Bold)
+                }
+
+                if (answerVerified) {
+                  Button(
+                    onClick = { viewModel.nextQuestion() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                    modifier = Modifier
+                      .weight(1f)
+                      .testTag("next_short_question_btn")
+                  ) {
+                    Text("下一挑戰題 🚀", fontWeight = FontWeight.Bold)
+                  }
+                }
+              }
+            }
+          }
+
+          "long" -> {
+            item {
+              Card(
+                colors = CardDefaults.cardColors(
+                  containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                ),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+              ) {
+                Row(
+                  modifier = Modifier.padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.Assignment,
+                    contentDescription = "Writing Note",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                  )
+                  Column {
+                    Text(
+                      "✍️ DSE 長分數大作戰 (模擬 Part B / Sec A2)",
+                      fontWeight = FontWeight.Bold,
+                      fontSize = 12.sp,
+                      color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                      "請在常規溫習草稿紙上完成完整公式和推導步驟，然後在下方展開 Marking steps 進行高階自主考官閱卷判分。",
+                      fontSize = 11.sp,
+                      color = Color.DarkGray
+                    )
+                  }
+                }
+              }
+            }
+
+            // Fetch marking steps
+            val markingSteps = com.example.viewmodel.DseGradingProcessor.getMarkingStepsForQuestion(question)
+            val totalMarks = markingSteps.sumOf { it.marks }
+            val scoredMarks = markingSteps.filter { completedStepsState.contains(it.stepNumber) }.sumOf { it.marks }
+
+            item {
+              Card(
+                colors = CardDefaults.cardColors(
+                  containerColor = MaterialTheme.colorScheme.surface
+                ),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
+              ) {
+                Column(
+                  modifier = Modifier.padding(14.dp),
+                  verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Text(
+                      "🏆 閱卷核對器判分 (Marking Scheme)",
+                      fontWeight = FontWeight.ExtraBold,
+                      fontSize = 13.sp,
+                      color = MaterialTheme.colorScheme.primary
+                    )
+                    Box(
+                      modifier = Modifier
+                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                      Text(
+                        "評分: $scoredMarks / $totalMarks 分",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                      )
+                    }
+                  }
+                  HorizontalDivider(color = Color.LightGray.copy(alpha = 0.5f))
+                  Text(
+                    "勾選你在草稿紙上正確得出的步驟：",
+                    fontSize = 11.sp,
+                    color = Color.Gray
+                  )
+                }
+              }
+            }
+
+            items(markingSteps) { mStep ->
+              val stepCorrect = completedStepsState.contains(mStep.stepNumber)
+              Card(
+                colors = CardDefaults.cardColors(
+                  containerColor = if (stepCorrect) Color(0xFFD4EDDA).copy(alpha = 0.4f) else MaterialTheme.colorScheme.surface
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                  width = 1.dp,
+                  color = if (stepCorrect) Color(0xFF28A745).copy(alpha = 0.5f) else Color.LightGray.copy(alpha = 0.4f)
+                ),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .testTag("marking_step_${mStep.stepNumber}")
+              ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                      Box(
+                        modifier = Modifier
+                          .size(18.dp)
+                          .background(MaterialTheme.colorScheme.secondary, CircleShape),
+                        contentAlignment = Alignment.Center
+                      ) {
+                        Text(
+                          "${mStep.stepNumber}",
+                          color = Color.White,
+                          fontSize = 10.sp,
+                          fontWeight = FontWeight.Bold
+                        )
+                      }
+                      Text(
+                        "考點目標: ${mStep.content}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                      )
+                    }
+
+                    // Score indicator badge
+                    Box(
+                      modifier = Modifier
+                        .background(
+                          if (mStep.markType == "M") Color(0xFF1E88E5) else Color(0xFF43A047),
+                          RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                      Text(
+                        "${mStep.marks}${mStep.markType}",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black
+                      )
+                    }
+                  }
+
+                  Spacer(modifier = Modifier.height(6.dp))
+
+                  // Formula code block look
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .background(Color.Black.copy(alpha = 0.05f), RoundedCornerShape(4.dp))
+                      .padding(8.dp)
+                  ) {
+                    Text(
+                      mStep.formula,
+                      fontFamily = FontFamily.Monospace,
+                      fontSize = 11.sp,
+                      color = MaterialTheme.colorScheme.primary,
+                      modifier = Modifier.fillMaxWidth()
+                    )
+                  }
+
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    mStep.description,
+                    fontSize = 10.sp,
+                    color = Color.Gray,
+                    lineHeight = 13.sp
+                  )
+
+                  if (!answerVerified) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.End,
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Text("這步推導正確：", fontSize = 11.sp, color = Color.Gray)
+                      Checkbox(
+                        checked = stepCorrect,
+                        onCheckedChange = { isChecked ->
+                          completedStepsState = if (isChecked) {
+                            completedStepsState + mStep.stepNumber
+                          } else {
+                            completedStepsState - mStep.stepNumber
+                          }
+                        },
+                        modifier = Modifier.size(24.dp).testTag("step_check_${mStep.stepNumber}")
+                      )
+                    }
+                  }
+                }
+              }
+            }
+
+            item {
+              Spacer(modifier = Modifier.height(6.dp))
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Button(
+                  onClick = {
+                    val pass = scoredMarks >= (totalMarks / 2f)
+                    val result = com.example.viewmodel.GradingResult(
+                      isCorrect = pass,
+                      earnedMarks = scoredMarks,
+                      maxMarks = totalMarks,
+                      feedbackTitle = if (pass) "🎉 長題分配合格！" else "⚠️ 步驟仍需精進",
+                      feedbackBody = "您在本題 5 級閱卷基準下自我判定得 $scoredMarks / $totalMarks 分！獲得對應多巴胺點數 ${scoredMarks * 10} DP。"
+                    )
+                    gradingFeedbackResult = result
+                    answerVerified = true
+                    if (pass) {
+                      showCorrectVisualConfetti = true
+                      viewModel.recordAnswer(question.id, true, timeSpentSeconds = elapsedSeconds)
+                    } else {
+                      showMistakeDialog = true
+                      viewModel.recordAnswer(question.id, false, timeSpentSeconds = elapsedSeconds)
+                    }
+                  },
+                  enabled = !answerVerified,
+                  modifier = Modifier
+                    .weight(1f)
+                    .testTag("submit_long_step_btn")
+                ) {
+                  Text("送出步驟閱卷分數", fontWeight = FontWeight.Bold)
+                }
+
+                if (answerVerified) {
+                  Button(
+                    onClick = { viewModel.nextQuestion() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
+                    modifier = Modifier
+                      .weight(1f)
+                      .testTag("next_long_question_btn")
+                  ) {
+                    Text("下一挑戰題 🚀", fontWeight = FontWeight.Bold)
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // --- Standard DseGradingProcessor Instant Feedback Banner Bar ---
+        if (answerVerified && gradingFeedbackResult != null) {
+          item {
+            val result = gradingFeedbackResult!!
+            Card(
+              colors = CardDefaults.cardColors(
+                containerColor = if (result.isCorrect) Color(0xFFD4EDDA) else Color(0xFFF8D7DA)
+              ),
+              border = androidx.compose.foundation.BorderStroke(
+                width = 1.dp,
+                color = if (result.isCorrect) Color(0xFF28A745) else Color(0xFFDC3545)
+              ),
+              modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).testTag("grading_result_feedback_banner")
+            ) {
+              Column(modifier = Modifier.padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(
+                    imageVector = if (result.isCorrect) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = "Status",
+                    tint = if (result.isCorrect) Color(0xFF28A745) else Color(0xFFDC3545),
+                    modifier = Modifier.size(20.dp)
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    result.feedbackTitle,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = if (result.isCorrect) Color(0xFF155724) else Color(0xFF721C24)
+                  )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  result.feedbackBody,
+                  fontSize = 12.sp,
+                  color = if (result.isCorrect) Color(0xFF155724) else Color(0xFF721C24),
+                  lineHeight = 16.sp
+                )
               }
             }
           }
@@ -1831,6 +3249,14 @@ fun MistakesScreen(
   onGoToChallenge: (String) -> Unit
 ) {
   val scope = rememberCoroutineScope()
+  val allQuestions by viewModel.allQuestions.collectAsStateWithLifecycle()
+
+  // State tracking for modern interactive reviews
+  val expandedQuestionId = remember { mutableStateOf<String?>(null) }
+  val selectedChoices = remember { mutableStateMapOf<String, String?>() }
+  val answerVerified = remember { mutableStateMapOf<String, Boolean>() }
+  val userResults = remember { mutableStateMapOf<String, Boolean>() }
+  val userFeedbackMessage = remember { mutableStateMapOf<String, String>() }
 
   Column(
     modifier = Modifier
@@ -1838,13 +3264,13 @@ fun MistakesScreen(
       .padding(16.dp)
   ) {
     Text(
-      "🗃️ 錯題本 2.0 內控庫",
+      "🗃️ 錯題本 2.0 學習盲點攻克庫",
       fontSize = 20.sp,
       fontWeight = FontWeight.Black,
       color = MaterialTheme.colorScheme.primary
     )
     Text(
-      "直面你錯得最多的學門課題，自動引導你再練習同類題！",
+      "直面你曾答錯的文憑試題！展開即可於本頁重做考題、參閱閱卷重點及一鍵移出錯題本！",
       fontSize = 12.sp,
       color = Color.Gray
     )
@@ -1876,79 +3302,482 @@ fun MistakesScreen(
     } else {
       LazyColumn(
         modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
       ) {
         items(mistakes) { mistake ->
+          val question = allQuestions.find { it.id == mistake.questionId }
+          val isExpanded = expandedQuestionId.value == mistake.questionId
+
           Card(
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("mistake_card_${mistake.questionId}"),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+              containerColor = if (isExpanded) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+              width = if (isExpanded) 1.5.dp else 1.dp,
+              color = if (isExpanded) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.4f)
+            )
           ) {
             Column(modifier = Modifier.padding(16.dp)) {
+              // Header line with Badges
               Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
               ) {
-                Box(
-                  modifier = Modifier
-                    .background(Color(0xFFDC3545).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                // Topic & Subject
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                  Text(
-                    "答錯：${mistake.timesFailed} 次",
-                    color = Color(0xFFDC3545),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                  )
+                  val subjectEmoji = when(mistake.subject.lowercase()) {
+                    "math" -> "📐"
+                    "physics" -> "⚡"
+                    "chemistry" -> "🧪"
+                    "english" -> "🇬🇧"
+                    else -> "📚"
+                  }
+                  val subjectText = when(mistake.subject.lowercase()) {
+                    "math" -> "數學"
+                    "physics" -> "物理"
+                    "chemistry" -> "化學"
+                    "english" -> "英文"
+                    else -> mistake.subject.uppercase()
+                  }
+                  Box(
+                    modifier = Modifier
+                      .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp))
+                      .padding(horizontal = 8.dp, vertical = 3.dp)
+                  ) {
+                    Text(
+                      "$subjectEmoji $subjectText",
+                      color = MaterialTheme.colorScheme.onPrimaryContainer,
+                      fontSize = 10.sp,
+                      fontWeight = FontWeight.Bold
+                    )
+                  }
+
+                  Box(
+                    modifier = Modifier
+                      .background(Color(0xFFDC3545).copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                      .padding(horizontal = 8.dp, vertical = 3.dp)
+                  ) {
+                    Text(
+                      "答錯 ${mistake.timesFailed} 次",
+                      color = Color(0xFFDC3545),
+                      fontSize = 10.sp,
+                      fontWeight = FontWeight.Bold
+                    )
+                  }
                 }
 
+                // Reason Tag
                 Box(
                   modifier = Modifier
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(8.dp))
                     .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                   Text(
                     reasonDescription(mistake.reasonTag),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold
                   )
                 }
               }
 
-              Spacer(modifier = Modifier.height(10.dp))
+              Spacer(modifier = Modifier.height(8.dp))
               Text(
-                "學科: ${mistake.subject.uppercase()}  |  課題: ${mistake.topic}",
-                fontSize = 11.sp,
+                "課題：${question?.topicChinese ?: mistake.topic}",
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.Gray
-              )
-              Spacer(modifier = Modifier.height(4.dp))
-              Text(
-                "備忘記錄：${mistake.userNotes}",
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                color = Color.DarkGray
+                color = MaterialTheme.colorScheme.onSurface
               )
 
+              if (question != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                // Collapsed Preview
+                if (!isExpanded) {
+                  Text(
+                    text = question.questionText,
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 16.sp
+                  )
+                }
+              }
+
+              Spacer(modifier = Modifier.height(10.dp))
+
+              // User notes or hint
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .background(Color.LightGray.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                  .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Edit,
+                  contentDescription = "Notes",
+                  tint = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                  "溫習筆記：${mistake.userNotes.ifBlank { "需要加強底層對抗邏輯。" }}",
+                  fontSize = 11.sp,
+                  color = Color.DarkGray
+                )
+              }
+
+              // EXPANDED INTERACTIVE REVIEW SECTION
+              if (isExpanded && question != null) {
+                Spacer(modifier = Modifier.height(14.dp))
+                Divider(color = Color.LightGray.copy(alpha = 0.3f), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Question Statement card
+                Card(
+                  colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+                  ),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                      "題目考卷內容 Question:",
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                      question.questionText,
+                      fontSize = 14.sp,
+                      fontWeight = FontWeight.Medium,
+                      lineHeight = 20.sp
+                    )
+                    if (question.methodologyType != "General") {
+                      Spacer(modifier = Modifier.height(6.dp))
+                      Box(
+                        modifier = Modifier
+                          .background(Color(0xFFFF9800).copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp))
+                          .padding(horizontal = 8.dp, vertical = 2.dp)
+                      ) {
+                        Text(
+                          "🔐 底層計謀: ${question.methodologyType}",
+                          color = Color(0xFFE65100),
+                          fontSize = 9.sp,
+                          fontWeight = FontWeight.Bold
+                        )
+                      }
+                    }
+                  }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // MCQ Choices Rendering
+                val choices = listOf(
+                  "A" to question.optionA,
+                  "B" to question.optionB,
+                  "C" to question.optionC,
+                  "D" to question.optionD
+                )
+
+                val selectedChoice = selectedChoices[mistake.questionId]
+                val verified = answerVerified[mistake.questionId] ?: false
+                val isAnswerCorrectResult = userResults[mistake.questionId] ?: false
+
+                Text(
+                  "💡 請在下方重新選擇正確解答：",
+                  fontSize = 12.sp,
+                  fontWeight = FontWeight.Bold,
+                  modifier = Modifier.padding(bottom = 6.dp)
+                )
+
+                choices.forEach { (key, optionText) ->
+                  val isChoiceSelected = selectedChoice == key
+                  val isCorrect = key == question.correctAnswer
+
+                  val choiceBgColor = when {
+                    verified && isChoiceSelected && isCorrect -> Color(0xFFD4EDDA) // Correct Selected
+                    verified && isChoiceSelected && !isCorrect -> Color(0xFFF8D7DA) // Incorrect Selected
+                    verified && !isChoiceSelected && isCorrect -> Color(0xFFD4EDDA) // Guide Correct
+                    isChoiceSelected -> MaterialTheme.colorScheme.primaryContainer
+                    else -> MaterialTheme.colorScheme.surface
+                  }
+
+                  val choiceBorderColor = when {
+                    verified && isChoiceSelected && isCorrect -> Color(0xFF28A745)
+                    verified && isChoiceSelected && !isCorrect -> Color(0xFFDC3545)
+                    isChoiceSelected -> MaterialTheme.colorScheme.primary
+                    else -> Color.LightGray.copy(alpha = 0.4f)
+                  }
+
+                  Card(
+                    colors = CardDefaults.cardColors(containerColor = choiceBgColor),
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .padding(vertical = 4.dp)
+                      .border(1.dp, choiceBorderColor, RoundedCornerShape(8.dp))
+                      .clickable(enabled = !verified) {
+                        selectedChoices[mistake.questionId] = key
+                      }
+                      .testTag("mistake_option_${mistake.questionId}_${key.lowercase()}")
+                  ) {
+                    Row(
+                      modifier = Modifier.padding(12.dp),
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      Box(
+                        modifier = Modifier
+                          .size(26.dp)
+                          .background(
+                            color = if (isChoiceSelected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.3f),
+                            shape = CircleShape
+                          ),
+                        contentAlignment = Alignment.Center
+                      ) {
+                        Text(
+                          key,
+                          fontWeight = FontWeight.Bold,
+                          fontSize = 12.sp,
+                          color = if (isChoiceSelected) Color.White else Color.Black
+                        )
+                      }
+                      Spacer(modifier = Modifier.width(10.dp))
+                      Text(
+                        optionText,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.Black
+                      )
+                    }
+                  }
+                }
+
+                // Interactive control buttons
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                  if (!verified) {
+                    Button(
+                      onClick = {
+                        if (selectedChoice == null) return@Button
+                        val correct = selectedChoice == question.correctAnswer
+                        answerVerified[mistake.questionId] = true
+                        userResults[mistake.questionId] = correct
+                        
+                        if (correct) {
+                          userFeedbackMessage[mistake.questionId] = "🎉 回答正確！你已成功重構了本題的底層邏輯盲區！"
+                          viewModel.recordAnswer(question.id, true, timeSpentSeconds = 15)
+                        } else {
+                          userFeedbackMessage[mistake.questionId] = "❌ 答錯了。別氣餒！請參考下方的名師考點和解題詳解。"
+                          viewModel.recordAnswer(question.id, false, timeSpentSeconds = 15)
+                        }
+                      },
+                      enabled = selectedChoice != null,
+                      modifier = Modifier
+                        .weight(1f)
+                        .height(38.dp)
+                        .testTag("verify_mistake_btn_${mistake.questionId}")
+                    ) {
+                      Text("驗證新解答", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                  } else {
+                    // Try again button (if incorrect)
+                    if (!isAnswerCorrectResult) {
+                      OutlinedButton(
+                        onClick = {
+                          answerVerified[mistake.questionId] = false
+                          selectedChoices[mistake.questionId] = null
+                          userResults[mistake.questionId] = false
+                        },
+                        modifier = Modifier
+                          .weight(1f)
+                          .height(38.dp)
+                          .testTag("retry_mistake_btn_${mistake.questionId}")
+                      ) {
+                        Text("再試一次 🔄", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                      }
+                    } else {
+                      // Correct mastered state
+                      Button(
+                        onClick = {
+                          scope.launch {
+                            viewModel.deleteMistakeRecord(mistake.questionId)
+                            expandedQuestionId.value = null
+                          }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                        modifier = Modifier
+                          .weight(1f)
+                          .height(38.dp)
+                          .testTag("mastered_remove_btn_${mistake.questionId}")
+                      ) {
+                        Icon(imageVector = Icons.Default.Check, contentDescription = "Mastered", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("已掌握！移出錯題集", fontSize = 12.sp, fontWeight = FontWeight.Black)
+                      }
+                    }
+                  }
+                }
+
+                // Inline Feedback banner
+                val feedback = userFeedbackMessage[mistake.questionId]
+                if (!feedback.isNullOrEmpty()) {
+                  Spacer(modifier = Modifier.height(8.dp))
+                  Box(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .background(
+                        color = if (isAnswerCorrectResult) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                        shape = RoundedCornerShape(6.dp)
+                      )
+                      .border(
+                        1.dp,
+                        if (isAnswerCorrectResult) Color(0xFF81C784) else Color(0xFFE57373),
+                        RoundedCornerShape(6.dp)
+                      )
+                      .padding(8.dp)
+                  ) {
+                    Text(
+                      feedback,
+                      fontSize = 11.sp,
+                      color = if (isAnswerCorrectResult) Color(0xFF2E7D32) else Color(0xFFC62828),
+                      fontWeight = FontWeight.Bold
+                    )
+                  }
+                }
+
+                // Star Explanation / Strategy section (always shown when expanded for complete guidance!)
+                Spacer(modifier = Modifier.height(12.dp))
+                Card(
+                  colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                  ),
+                  border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                  modifier = Modifier.fillMaxWidth()
+                ) {
+                  Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                      "⭐ 閱卷星級解題錦囊 (Marking Scheme & Guide):",
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Black,
+                      color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                      question.explanationDetailed,
+                      fontSize = 12.sp,
+                      lineHeight = 16.sp,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                      "💡 核心思路：${question.explanationHint}",
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = Color.DarkGray
+                    )
+
+                    // Video Walkthrough & Outbound links!
+                    if (question.youtubeUrl.isNotEmpty()) {
+                      Spacer(modifier = Modifier.height(10.dp))
+                      val uriHandler1 = androidx.compose.ui.platform.LocalUriHandler.current
+                      Row(
+                        modifier = Modifier
+                          .fillMaxWidth()
+                          .clickable {
+                            try {
+                              uriHandler1.openUri(question.youtubeUrl)
+                            } catch (e: Exception) {
+                            }
+                          }
+                          .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Icon(
+                          imageVector = Icons.Default.PlayCircle,
+                          contentDescription = "Watch helper",
+                          tint = Color.Red,
+                          modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                          "Herman Yeung 真題對照考點剖析 📺",
+                          fontSize = 11.sp,
+                          fontWeight = FontWeight.Bold,
+                          color = Color.Red,
+                          textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+
+              // Card Bottom actions bar (Expand toggle and Delete/Challenger)
               Spacer(modifier = Modifier.height(12.dp))
+              Divider(color = Color.LightGray.copy(alpha = 0.15f), thickness = 1.dp)
+              Spacer(modifier = Modifier.height(8.dp))
+
               Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
               ) {
+                // Expand / Collapse details trigger
+                TextButton(
+                  onClick = {
+                    if (isExpanded) {
+                      expandedQuestionId.value = null
+                    } else {
+                      expandedQuestionId.value = mistake.questionId
+                    }
+                  },
+                  modifier = Modifier.testTag("expand_toggle_btn_${mistake.questionId}"),
+                  contentPadding = PaddingValues(0.dp)
+                ) {
+                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(
+                      imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                      contentDescription = "Toggle Expand",
+                      modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                      if (isExpanded) "收起複習面板" else "📖 即時複習 / 重新挑戰題目",
+                      fontSize = 12.sp,
+                      fontWeight = FontWeight.Bold
+                    )
+                  }
+                }
+
+                // Delete raw record trigger
                 OutlinedButton(
                   onClick = {
                     scope.launch { viewModel.deleteMistakeRecord(mistake.questionId) }
                   },
                   colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Gray),
-                  modifier = Modifier.padding(end = 6.dp)
+                  border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray),
+                  modifier = Modifier
+                    .height(32.dp)
+                    .testTag("delete_mistake_btn_${mistake.questionId}"),
+                  contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
-                  Text("我知道錯了 (刪除記錄)", fontSize = 11.sp)
-                }
-
-                Button(
-                  onClick = { onGoToChallenge(mistake.subject) }
-                ) {
-                  Text("重做這門課 🚀", fontSize = 11.sp)
+                  Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete record", modifier = Modifier.size(12.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("我知道錯了 (刪除)", fontSize = 10.sp)
                 }
               }
             }
@@ -2070,35 +3899,43 @@ data class LeaderboardLeader(
   val specialBadge: Boolean
 )
 
-// --- SCREEN 5: REVISION SCREEN (最新資訊與應試指南) ---
+// --- SCREEN 5: REVISION SCREEN (個人化學習計劃、應試資訊與應試指南) ---
 @Composable
 fun RevisionScreen() {
   var selectedSubTab by remember { mutableStateOf(0) }
+
+  // States for study plans
+  val initialSubjects = setOf("math", "physics", "chemistry", "english")
+  var targetSubjectsState by remember { mutableStateOf(initialSubjects) }
+  var daysRemainingState by remember { mutableStateOf(45f) } // Default DSE count downs
+  var reviewRemindersEnabled by remember { mutableStateOf(true) }
+  var completedPlanItemsState by remember { mutableStateOf(setOf<String>()) }
 
   Column(
     modifier = Modifier
       .fillMaxSize()
       .padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp)
+    verticalArrangement = Arrangement.spacedBy(10.dp)
   ) {
     Text(
-      "📣 HKDSE 最新考情與通關指南",
+      "📅 HKDSE 考情分組、智能學習計劃與指南",
       fontWeight = FontWeight.Black,
-      fontSize = 20.sp,
+      fontSize = 18.sp,
       color = MaterialTheme.colorScheme.primary
     )
     Text(
-      "收錄考評局官方最新動態、核心考綱更新，並提煉頂尖狀元高分溫習法與時間分配術。",
-      fontSize = 12.sp,
-      color = Color.Gray
+      "首創依據 P0-P4 選科優先度、考量目標考纲與倒計天數，為考生量身打造每日黃金時間分配方案。",
+      fontSize = 11.sp,
+      color = Color.Gray,
+      lineHeight = 14.sp
     )
 
-    // Sub-tab selectors
+    // Balanced responsive horizontal tabs
+    val tabs = listOf("📅 學習計劃", "📢 考情發佈", "📚 狀元溫習術", "⏳ 考場時間術")
     Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(8.dp)
+      modifier = Modifier.fillMaxWidth().testTag("revision_tab_row"),
+      horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-      val tabs = listOf("📅 考情發佈", "📚 狀元溫習術", "⏳ 考場時間術")
       tabs.forEachIndexed { idx, title ->
         val selected = selectedSubTab == idx
         Card(
@@ -2108,6 +3945,7 @@ fun RevisionScreen() {
           modifier = Modifier
             .weight(1f)
             .clickable { selectedSubTab = idx }
+            .testTag("revision_tab_$idx")
         ) {
           Box(
             modifier = Modifier
@@ -2117,7 +3955,7 @@ fun RevisionScreen() {
           ) {
             Text(
               title,
-              fontSize = 11.sp,
+              fontSize = 10.sp,
               fontWeight = FontWeight.Bold,
               color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -2126,16 +3964,283 @@ fun RevisionScreen() {
       }
     }
 
-    Spacer(modifier = Modifier.height(4.dp))
+    Spacer(modifier = Modifier.height(2.dp))
 
     LazyColumn(
-      modifier = Modifier.weight(1f).fillMaxWidth(),
-      verticalArrangement = Arrangement.spacedBy(12.dp)
+      modifier = Modifier.weight(1f).fillMaxWidth().testTag("revision_content_column"),
+      verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
       when (selectedSubTab) {
-        0 -> { // Exam Bulletins
+        0 -> { // Modern Personalized Study Schedule
           item {
-            Text("🗓️ DSE 2026/2027 官方最新日程與考綱", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
+            Card(
+              colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+              ),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                  "📊 HKDSE 學習計劃底層生成規則 (P0 - P4 戰術優先度)",
+                  fontWeight = FontWeight.ExtraBold,
+                  fontSize = 13.sp,
+                  color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                  "• P0 必爭地 (數學/M1/M2) — 秒殺與即時批改\n" +
+                  "• P1 理英重心 (物化生/英文) — 重組與解法對稱\n" +
+                  "• P2 理論及格 (中文/BAFS/ICT) — 高階語意改寫\n" +
+                  "• P3-P4 小眾人文與冷門科目 — 重在脈絡框架",
+                  fontSize = 11.sp,
+                  color = MaterialTheme.colorScheme.onPrimaryContainer,
+                  lineHeight = 15.sp
+                )
+              }
+            }
+          }
+
+          // 1. Selector segment for target subjects
+          item {
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
+            ) {
+              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("📌 勾選你要迎戰的 HKDSE 科目：", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+
+                // Render Priority Checkboxes
+                val subjectsByPriority = listOf(
+                  Triple("math", "📐 P0 數學 (必修部分)", "P0"),
+                  Triple("math_m", "📈 P0 數學選修 M1 / M2", "P0"),
+                  Triple("physics", "⚡ P1 物理科", "P1"),
+                  Triple("chemistry", "🧪 P1 化學科", "P1"),
+                  Triple("biology", "🧬 P1 生物科", "P1"),
+                  Triple("english", "🇬🇧 P1 英文必修科", "P1"),
+                  Triple("chinese", "🇨🇳 P2 中文必修科", "P2"),
+                  Triple("bafs_ict", "💼 P2 BAFS 商業 / ICT 資訊科技", "P2"),
+                  Triple("humanities", "📚 P3-P4 中史 / 歷史 / 地理選修", "P3")
+                )
+
+                subjectsByPriority.forEach { (subKey, label, priority) ->
+                  val isChecked = targetSubjectsState.contains(subKey)
+                  Row(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .clickable {
+                        targetSubjectsState = if (isChecked) {
+                          targetSubjectsState - subKey
+                        } else {
+                          targetSubjectsState + subKey
+                        }
+                      }
+                      .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                  ) {
+                    Text(
+                      label,
+                      fontSize = 11.sp,
+                      fontWeight = if (isChecked) FontWeight.SemiBold else FontWeight.Normal,
+                      color = if (isChecked) MaterialTheme.colorScheme.primary else Color.Black
+                    )
+                    Checkbox(
+                      checked = isChecked,
+                      onCheckedChange = { isCheckedNow ->
+                        targetSubjectsState = if (isCheckedNow == true) {
+                          targetSubjectsState + subKey
+                        } else {
+                          targetSubjectsState - subKey
+                        }
+                      },
+                      modifier = Modifier.size(24.dp).testTag("select_plan_subject_$subKey")
+                    )
+                  }
+                }
+              }
+            }
+          }
+
+          // 2. Countdown slider for target exam date
+          item {
+            Card(
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                  Text("⏳ 預計距離首科 DSE 考試天數：", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                  Text(
+                    "${daysRemainingState.toInt()} 天",
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 13.sp
+                  )
+                }
+
+                Slider(
+                  value = daysRemainingState,
+                  onValueChange = { daysRemainingState = it },
+                  valueRange = 10f..180f,
+                  modifier = Modifier.fillMaxWidth().testTag("exam_days_slider")
+                )
+
+                val phaseText = when {
+                  daysRemainingState < 30f -> "🚨 進入 1-Month「極致操卷、全真模擬限時 Pass」黃金爆分期！"
+                  daysRemainingState < 60f -> "⚠️ 「鞏固重點、突破 DseGrading 步驟分」的核心攻堅期！"
+                  else -> "🎯 「全面夯實基本觀念、穩固底層邏輯」的體系奠定期。"
+                }
+                Text(phaseText, fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+
+          // 3. Spaced review reminders switch toggler
+          item {
+            Card(
+              colors = CardDefaults.cardColors(
+                containerColor = if (reviewRemindersEnabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+              ),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Row(
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  modifier = Modifier.weight(1f)
+                ) {
+                  Icon(
+                    imageVector = Icons.Default.NotificationsActive,
+                    contentDescription = "Review Notice",
+                    tint = MaterialTheme.colorScheme.primary
+                  )
+                  Column {
+                    Text("⏰ 智慧間隔重複複習提醒", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("系統會在每天晚上 9:30 與考前 1.5 小時，智能推送『AI 平台高頻錯題複盤與解法思維對照』。", fontSize = 10.sp, color = Color.Gray)
+                  }
+                }
+                Switch(
+                  checked = reviewRemindersEnabled,
+                  onCheckedChange = { reviewRemindersEnabled = it },
+                  modifier = Modifier.testTag("reminder_plan_toggle")
+                )
+              }
+            }
+          }
+
+          // 4. Dynamic Generated study schedule checklist items!
+          item {
+            Text("📋 為您量身定制的黃金每日學習時間表：", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
+          }
+
+          // Generate dynamic items based on target subjects selected!
+          val studyBlocks = mutableListOf<Pair<String, String>>()
+          if (targetSubjectsState.contains("math")) {
+            studyBlocks.add("P0_MATH" to "📐 1.5小時 DSE 必修數學：完成 10 題底層邏輯改寫題。重點訓練「圓的方程、二階變換、等幾何拐點解法」！")
+          }
+          if (targetSubjectsState.contains("math_m")) {
+            studyBlocks.add("P0_MATH_M" to "📈 1小時 數學 M1 / M2：模擬 Part B 大題目，嚴格執行 DseGrading 3級閱卷法核對，穩拿步驟分！")
+          }
+          if (targetSubjectsState.contains("physics") || targetSubjectsState.contains("chemistry") || targetSubjectsState.contains("biology")) {
+            studyBlocks.add("P1_SCIENCE" to "⚡/🧪 1.25小時 理科專項攻克：做2道化學/物理中度大題。草稿推演後立刻展開 Marking scheme 高維對照！")
+          }
+          if (targetSubjectsState.contains("english")) {
+            studyBlocks.add("P1_ENGLISH" to "🇬🇧 45分鐘 英文核心：閱讀 3 篇 DSE 改寫文章，熟悉邏輯連貫性（Cohesion）核心語法盲點。")
+          }
+          if (targetSubjectsState.contains("chinese")) {
+            studyBlocks.add("P2_CHINESE" to "🇨🇳 30分鐘 中文實體：高頻錯題翻閱、精準掌握文言實詞最簡代元轉換。")
+          }
+          if (studyBlocks.isEmpty()) {
+            studyBlocks.add("DEFAULT_PLAN" to "📍 請至少在上方勾選1門 HKDSE 科目以動態生成黃金戰術安排！")
+          }
+
+          items(studyBlocks) { (blockKey, blockText) ->
+            val blockDone = completedPlanItemsState.contains(blockKey)
+            Card(
+              colors = CardDefaults.cardColors(
+                containerColor = if (blockDone) Color(0xFFD4EDDA).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface
+              ),
+              border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (blockDone) Color(0xFF28A745).copy(alpha = 0.4f) else Color.LightGray.copy(alpha = 0.3f)
+              ),
+              modifier = Modifier.fillMaxWidth().testTag("plan_item_$blockKey")
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    blockText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 15.sp,
+                    color = if (blockDone) Color.Gray else Color.Black
+                  )
+                  if (blockDone) {
+                    Text("💡 狀態：今日已完滿推演，多巴胺分配完成！", fontSize = 9.sp, color = Color(0xFF28A745), fontWeight = FontWeight.Bold)
+                  }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Checkbox(
+                  checked = blockDone,
+                  onCheckedChange = { isChecked ->
+                    completedPlanItemsState = if (isChecked == true) {
+                      completedPlanItemsState + blockKey
+                    } else {
+                      completedPlanItemsState - blockKey
+                    }
+                  },
+                  modifier = Modifier.size(24.dp).testTag("plan_check_$blockKey")
+                )
+              }
+            }
+          }
+
+          // Security Protection Badge at the very bottom
+          item {
+            Card(
+              colors = CardDefaults.cardColors(
+                containerColor = Color(0xFFECEFF1)
+              ),
+              modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Shield,
+                  contentDescription = "Security Shield",
+                  tint = Color(0xFF455A64),
+                  modifier = Modifier.size(28.dp)
+                )
+                Column {
+                  Text(
+                    "🔐 DSE Level Up 安全合規沙盒保障",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF37474F)
+                  )
+                  Text(
+                    "本平台所有 AI 生成試題與考試解析均運行於安全的託管沙盒環境。我們特別優化了 Token 頻率限制、雙向 Prompt 防注入（WAF）與動態憑證儲存，有效防堵惡意 Token 竊取與系統越獄入侵，敬請安心專注溫習！",
+                    fontSize = 9.sp,
+                    color = Color(0xFF546E7A),
+                    lineHeight = 13.sp
+                  )
+                }
+              }
+            }
+          }
+        }
+
+        1 -> { // Exam Bulletins (indexes shifted by 1)
+          item {
+            Text("📢 DSE 官方最新日程與考綱發佈", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary)
           }
           item {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -2636,6 +4741,1210 @@ fun ConfettiAnimationOverlay(onFinished: () -> Unit) {
           y = currentY
         )
       )
+    }
+  }
+}
+
+// ==========================================
+// --- PREMIUM FEATURE CODES: TIME & SOCIALS ---
+// ==========================================
+
+@Composable
+fun ImmersiveFocusLockOverlay(
+  focusSec: Int,
+  subject: String,
+  onUnlock: () -> Unit
+) {
+  var showWarningDialog by remember { mutableStateOf(false) }
+
+  val hours = focusSec / 3600
+  val minutes = (focusSec % 3600) / 60
+  val seconds = focusSec % 60
+  val formattedTime = String.format("%02d:%02d:%02d", hours, minutes, seconds)
+
+  // Soft visual glow background animation
+  val infiniteTransition = rememberInfiniteTransition(label = "pulse_glow")
+  val pulseScale by infiniteTransition.animateFloat(
+    initialValue = 0.95f,
+    targetValue = 1.05f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(2500, easing = LinearEasing),
+      repeatMode = RepeatMode.Reverse
+    ),
+    label = "scale"
+  )
+
+  // Affiliative motivating quotes that rotate
+  val motivationQuotes = listOf(
+    "💡 不看昨天的遺憾，不看明天的迷茫，只看今時今日！",
+    "🔥 放下手機，專注當下，你離理想中的 5** 只有一步之遙！",
+    "🌟 外面的世界都在瘋狂，而你的安靜將鑄就最震撼的逆襲！",
+    "📚 同屆考友們正在各自精進，你也行在自我突破的高峰上！",
+    "💪 每一道算對的公式、背熟的語法，都是你未來的金鐘罩鐵布衫！"
+  )
+  val quoteIndex = (focusSec / 15) % motivationQuotes.size
+  val activeQuote = motivationQuotes[quoteIndex]
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(
+        Brush.verticalGradient(
+          colors = listOf(
+            MaterialTheme.colorScheme.primaryContainer,
+            Color(0xFF0F172A) // Dark space color
+          )
+        )
+      )
+      .clickable(enabled = false) {}, // Swallow all click events to prevent clicking background elements!
+    contentAlignment = Alignment.Center
+  ) {
+    Column(
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(24.dp),
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(24.dp)
+    ) {
+      // Large Lock & Hourglass pulse box
+      Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+          .scale(pulseScale)
+          .size(160.dp)
+          .background(Color.White.copy(alpha = 0.08f), CircleShape)
+          .border(2.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+      ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+          Icon(
+            imageVector = Icons.Default.Lock,
+            contentDescription = "Lock Active",
+            tint = Color(0xFFFFD700), // Glowing Gold
+            modifier = Modifier.size(48.dp)
+          )
+          Spacer(modifier = Modifier.height(6.dp))
+          Text(
+            "專注強鎖中",
+            color = Color.White.copy(alpha = 0.8f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold
+          )
+        }
+      }
+
+      // Elapsed focus timer text
+      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+          formattedTime,
+          fontSize = 44.sp,
+          fontFamily = FontFamily.Monospace,
+          fontWeight = FontWeight.Black,
+          color = Color.White,
+          letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+          Box(
+            modifier = Modifier
+              .size(8.dp)
+              .background(Color(0xFF4CAF50), CircleShape)
+          )
+          Text(
+            "正在全力攻克：$subject",
+            color = Color(0xFF64B5F6),
+            fontSize = 14.sp,
+            fontWeight = FontWeight.ExtraBold
+          )
+        }
+      }
+
+      // Scroll background encouragement quote
+      Card(
+        colors = CardDefaults.cardColors(
+          containerColor = Color.White.copy(alpha = 0.05f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+          width = 1.dp,
+          color = Color.White.copy(alpha = 0.1f)
+        ),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 12.dp)
+      ) {
+        Column(
+          modifier = Modifier.padding(16.dp),
+          horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+          Text(
+            activeQuote,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White.copy(alpha = 0.9f),
+            textAlign = TextAlign.Center,
+            lineHeight = 18.sp
+          )
+        }
+      }
+
+      // Small instruction
+      Text(
+        "💡 貼心提醒: 「專注鎖機模式」啟動！請將手機正面朝下放置於桌上，心無旁騖，直到計時結束。5** 的桂冠，屬於能夠對抗誘惑的自律者！",
+        fontSize = 11.sp,
+        color = Color.White.copy(alpha = 0.5f),
+        textAlign = TextAlign.Center,
+        lineHeight = 15.sp,
+        modifier = Modifier.padding(horizontal = 16.dp)
+      )
+
+      Spacer(modifier = Modifier.height(16.dp))
+
+      // Exit button
+      OutlinedButton(
+        onClick = { showWarningDialog = true },
+        colors = ButtonDefaults.outlinedButtonColors(
+          contentColor = Color.White.copy(alpha = 0.7f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(48.dp)
+          .testTag("emergency_unlock_button")
+      ) {
+        Icon(
+          imageVector = Icons.Default.Cancel,
+          contentDescription = "Unlock",
+          modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+          "緊急退出專注並放棄積分",
+          fontWeight = FontWeight.Bold,
+          fontSize = 13.sp
+        )
+      }
+    }
+
+    if (showWarningDialog) {
+      AlertDialog(
+        onDismissRequest = { showWarningDialog = false },
+        title = {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.Warning,
+              contentDescription = "Warning",
+              tint = Color(0xFFE53935)
+            )
+            Text("確定要中途放棄嗎？ 🤔")
+          }
+        },
+        text = {
+          Text(
+            "自律是通往 5** 唯一的通道。如果現在放棄，剛才所累積的專注時間將被銷毀，您也將無法獲得任何多巴胺 XP 溫習積分。請咬緊牙關再堅持一下！",
+            fontSize = 12.sp,
+            lineHeight = 18.sp
+          )
+        },
+        confirmButton = {
+          Button(
+            onClick = {
+              showWarningDialog = false
+              onUnlock()
+            },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.error
+            )
+          ) {
+            Text("殘忍放棄", fontWeight = FontWeight.Bold)
+          }
+        },
+        dismissButton = {
+          OutlinedButton(
+            onClick = { showWarningDialog = false }
+          ) {
+            Text("繼續堅持溫習", fontWeight = FontWeight.Bold)
+          }
+        }
+      )
+    }
+  }
+}
+
+@Composable
+fun StudyFocusHubCard(viewModel: DseViewModel) {
+  val context = LocalContext.current
+  val focusSubjects by viewModel.customFocusSubjects.collectAsStateWithLifecycle()
+  val selectedFocusSub by viewModel.selectedFocusSubject.collectAsStateWithLifecycle()
+  val isRunning by viewModel.isFocusTimerRunning.collectAsStateWithLifecycle()
+  val isLockActive by viewModel.isFocusLockActive.collectAsStateWithLifecycle()
+  val secondsElapsed by viewModel.focusSecondsElapsed.collectAsStateWithLifecycle()
+  val focusSubjectMinutes by viewModel.focusSubjectMinutes.collectAsStateWithLifecycle()
+
+  var newSubjectName by remember { mutableStateOf("") }
+  var showAddSubjectDialog by remember { mutableStateOf(false) }
+
+  val hours = secondsElapsed / 3600
+  val minutes = (secondsElapsed % 3600) / 60
+  val seconds = secondsElapsed % 60
+  val formattedTimer = String.format("%02d:%02d:%02d", hours, minutes, seconds)
+
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("study_focus_hub_card"),
+    colors = CardDefaults.cardColors(
+      containerColor = MaterialTheme.colorScheme.surface
+    ),
+    border = androidx.compose.foundation.BorderStroke(
+      width = 1.dp,
+      color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    )
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+      // Card Header
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Box(
+            modifier = Modifier
+              .size(36.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.primaryContainer)
+              .padding(8.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.Timer,
+              contentDescription = "Timer",
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp)
+            )
+          }
+          Column {
+            Text(
+              "⏱️ DSE 分科專注計時器",
+              fontWeight = FontWeight.ExtraBold,
+              fontSize = 15.sp,
+              color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+              "建立強自律與學科累計時間統計",
+              fontSize = 11.sp,
+              color = Color.Gray
+            )
+          }
+        }
+        
+        // Active display badge
+        Box(
+          modifier = Modifier
+            .background(
+              if (isRunning) Color(0xFF2E7D32) else MaterialTheme.colorScheme.surfaceVariant,
+              RoundedCornerShape(12.dp)
+            )
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+        ) {
+          Text(
+            if (isRunning) "專注中" else "IDLE 待命",
+            color = if (isRunning) Color.White else Color.Gray,
+            fontWeight = FontWeight.Bold,
+            fontSize = 9.sp
+          )
+        }
+      }
+
+      // 1. Subject specific chips selection grid with a dynamic ➕ option
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+          "📚 選擇當前溫習科目：",
+          fontWeight = FontWeight.Bold,
+          fontSize = 12.sp,
+          color = MaterialTheme.colorScheme.onSurface
+        )
+        
+        val chunks = focusSubjects.chunked(3)
+        chunks.forEach { rowItems ->
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            rowItems.forEach { sub ->
+              val isSelected = selectedFocusSub == sub
+              Card(
+                onClick = {
+                  if (!isRunning) {
+                    viewModel.setFocusSubject(sub)
+                  } else {
+                    Toast.makeText(context, "🚫 專注計時中，不可更換溫習科目！", Toast.LENGTH_SHORT).show()
+                  }
+                },
+                modifier = Modifier
+                  .weight(1f)
+                  .testTag("focus_sub_chip_$sub"),
+                colors = CardDefaults.cardColors(
+                  containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                  contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                  width = 1.dp,
+                  color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.3f)
+                )
+              ) {
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                  contentAlignment = Alignment.Center
+                ) {
+                  Text(
+                    sub,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                  )
+                }
+              }
+            }
+
+            if (rowItems.size < 3) {
+              Box(
+                modifier = Modifier
+                  .weight((3 - rowItems.size).toFloat())
+                  .height(32.dp)
+              )
+            }
+          }
+        }
+
+        // Add Subject button row
+        Button(
+          onClick = { showAddSubjectDialog = true },
+          colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+          ),
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(34.dp)
+            .testTag("add_custom_subject_button"),
+          contentPadding = PaddingValues(0.dp)
+        ) {
+          Icon(
+            imageVector = Icons.Default.Add,
+            contentDescription = "Add Subject icon",
+            modifier = Modifier.size(14.dp)
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          Text("➕ 自由新增自訂科目", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+      }
+
+      // 2. Focus distraction lock toggle switch
+      Card(
+        colors = CardDefaults.cardColors(
+          containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+          width = 1.dp,
+          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(12.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f)
+          ) {
+            Icon(
+              imageVector = Icons.Default.Lock,
+              contentDescription = "Lock",
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp)
+            )
+            Column {
+              Text(
+                "專注鎖機模式 (Focus distraction Lock)",
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.primary
+              )
+              Text(
+                "啟動全螢幕屏障遮罩，杜絕所有通知與滑手機分心！",
+                fontSize = 10.sp,
+                color = Color.Gray,
+                lineHeight = 13.sp
+              )
+            }
+          }
+          Switch(
+            checked = isLockActive,
+            onCheckedChange = { active ->
+              if (!isRunning) {
+                viewModel.toggleFocusLock(active)
+              } else {
+                Toast.makeText(context, "🚫 專注溫習中，不可變更鎖定設定！", Toast.LENGTH_SHORT).show()
+              }
+            },
+            modifier = Modifier
+              .scale(0.85f)
+              .testTag("focus_lock_switch")
+          )
+        }
+      }
+
+      // 3. Central Clock timer progress display
+      Card(
+        colors = CardDefaults.cardColors(
+          containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Text(
+            if (isRunning) "📊 專注時間走勢中" else "⏱️ 已準備好開始你的自律旅程",
+            fontSize = 11.sp,
+            color = Color.Gray,
+            fontWeight = FontWeight.Bold
+          )
+
+          Text(
+            formattedTimer,
+            fontSize = 36.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.ExtraBold,
+            color = if (isRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            letterSpacing = 1.sp
+          )
+
+          // Run Buttons
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+          ) {
+            if (!isRunning) {
+              Button(
+                onClick = {
+                  viewModel.startFocusTimer()
+                  Toast.makeText(context, "🚀 「$selectedFocusSub」專注計時啟動！加油！", Toast.LENGTH_SHORT).show()
+                },
+                colors = ButtonDefaults.buttonColors(
+                  containerColor = MaterialTheme.colorScheme.primary
+                ),
+                modifier = Modifier
+                  .weight(1f)
+                  .height(40.dp)
+                  .testTag("start_focus_button")
+              ) {
+                Icon(
+                  imageVector = Icons.Default.PlayArrow,
+                  contentDescription = "start",
+                  modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("開始專注", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+              }
+            } else {
+              Button(
+                onClick = {
+                  val secs = secondsElapsed
+                  viewModel.stopFocusTimer()
+                  if (secs > 0) {
+                    val earnedXP = (secs / 10).coerceAtLeast(1)
+                    Toast.makeText(context, "🎉 作戰成功！專注「$selectedFocusSub」已結算，榮獲 +$earnedXP XP分！🏆", Toast.LENGTH_LONG).show()
+                  }
+                },
+                colors = ButtonDefaults.buttonColors(
+                  containerColor = Color(0xFF2E7D32) // Nice Emerald green for completion
+                ),
+                modifier = Modifier
+                  .weight(1f)
+                  .height(40.dp)
+                  .testTag("stop_focus_button")
+              ) {
+                Icon(
+                  imageVector = Icons.Default.CheckCircle,
+                  contentDescription = "complete focus",
+                  modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("停止並結算 (領取XP)", fontSize = 12.sp, fontWeight = FontWeight.Black)
+              }
+            }
+          }
+        }
+      }
+
+      // 4. Statistics list showing precise times per subject
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+          "📊 金頭腦精確科目累積時間：",
+          fontWeight = FontWeight.Bold,
+          fontSize = 11.sp,
+          color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp),
+          horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+          val activeList = focusSubjectMinutes.toList().sortedByDescending { it.second }.take(4)
+          activeList.forEach { (sub, mins) ->
+            Card(
+              colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+              ),
+              modifier = Modifier.weight(1f)
+            ) {
+              Column(
+                modifier = Modifier
+                  .fillMaxSize()
+                  .padding(4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+              ) {
+                Text(
+                  sub,
+                  fontSize = 10.sp,
+                  fontWeight = FontWeight.Bold,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                  String.format("%.1f分", mins),
+                  fontSize = 10.sp,
+                  fontFamily = FontFamily.Monospace,
+                  color = MaterialTheme.colorScheme.primary,
+                  fontWeight = FontWeight.Black
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Dialog for adding a custom subject
+  if (showAddSubjectDialog) {
+    Dialog(onDismissRequest = { showAddSubjectDialog = false }) {
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(16.dp)
+          .testTag("add_subject_dialog"),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+      ) {
+        Column(
+          modifier = Modifier.padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          Text(
+            "➕ 自由新增 DSE 學習科目",
+            fontWeight = FontWeight.Black,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.primary
+          )
+
+          Text(
+            "輸入你想記錄的時間分組科目，例如：M2、微積分、English Writing、綜合人文學等，精準度百分百！",
+            fontSize = 11.sp,
+            color = Color.Gray,
+            lineHeight = 15.sp
+          )
+
+          OutlinedTextField(
+            value = newSubjectName,
+            onValueChange = { newSubjectName = it },
+            label = { Text("科目名稱 Subject Name", fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("new_subject_textfield"),
+            colors = OutlinedTextFieldDefaults.colors(
+              focusedBorderColor = MaterialTheme.colorScheme.primary
+            )
+          )
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            TextButton(onClick = { showAddSubjectDialog = false }) {
+              Text("取消 Cancel", fontSize = 12.sp, color = Color.Gray)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+              onClick = {
+                if (newSubjectName.isNotBlank()) {
+                  viewModel.addNewFocusSubject(newSubjectName)
+                  Toast.makeText(context, "✅ 已新增自訂學習群組科目：$newSubjectName！", Toast.LENGTH_SHORT).show()
+                  newSubjectName = ""
+                  showAddSubjectDialog = false
+                } else {
+                  Toast.makeText(context, "🚫 科目名稱不能為空喔！", Toast.LENGTH_SHORT).show()
+                }
+              },
+              modifier = Modifier.testTag("confirm_add_subject_button")
+            ) {
+              Text("確認新增", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+fun OnlineStudyGroupsCard(viewModel: DseViewModel) {
+  val context = LocalContext.current
+  val isUserInGroup by viewModel.isUserInGroup.collectAsStateWithLifecycle()
+  val groupRoomName by viewModel.groupRoomName.collectAsStateWithLifecycle()
+  val onlinePeers by viewModel.onlineGroupUsers.collectAsStateWithLifecycle()
+
+  var showFriendInviteDialog by remember { mutableStateOf(false) }
+  var showRoomSwitchDialog by remember { mutableStateOf(false) }
+
+  var inviteFriendName by remember { mutableStateOf("") }
+  var inviteFriendSchool by remember { mutableStateOf("") }
+  var switchRoomName by remember { mutableStateOf("") }
+
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .testTag("online_study_groups_card"),
+    colors = CardDefaults.cardColors(
+      containerColor = MaterialTheme.colorScheme.surface
+    ),
+    border = androidx.compose.foundation.BorderStroke(
+      width = 1.dp,
+      color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    )
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+      // Header item
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Box(
+            modifier = Modifier
+              .size(36.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.primaryContainer)
+              .padding(8.dp),
+            contentAlignment = Alignment.Center
+          ) {
+            Icon(
+              imageVector = Icons.Default.Groups,
+              contentDescription = "Groups",
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(20.dp)
+            )
+          }
+
+          Column {
+            Text(
+              "👥 線上讀書小組 Sync Room",
+              fontWeight = FontWeight.ExtraBold,
+              fontSize = 15.sp,
+              color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+              "即時查看隊友在線狀態與同儕累積時數",
+              fontSize = 11.sp,
+              color = Color.Gray
+            )
+          }
+        }
+
+        IconButton(
+          onClick = { showRoomSwitchDialog = true },
+          modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f))
+            .testTag("switch_room_icon")
+        ) {
+          Icon(
+            imageVector = Icons.Default.Sync,
+            contentDescription = "Switch Room",
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.primary
+          )
+        }
+      }
+
+      if (isUserInGroup) {
+        // Group Box
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+            .padding(12.dp)
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Column {
+              Text(
+                "當前加入房間：",
+                fontSize = 10.sp,
+                color = Color.Gray,
+                fontWeight = FontWeight.Bold
+              )
+              Text(
+                groupRoomName,
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Black
+              )
+            }
+            
+            // Stats
+            Box(
+              modifier = Modifier
+                .background(Color(0xFFE8F5E9), CircleShape)
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+              Text(
+                "📶 ${onlinePeers.filter { it.isOnline }.size}人線上合修中",
+                color = Color(0xFF2E7D32),
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp
+              )
+            }
+          }
+        }
+
+        // Action Buttons Row (Invite Friend)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Button(
+            onClick = { showFriendInviteDialog = true },
+            colors = ButtonDefaults.buttonColors(
+              containerColor = MaterialTheme.colorScheme.secondary
+            ),
+            modifier = Modifier
+              .weight(1f)
+              .height(34.dp)
+              .testTag("invite_friend_action_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.PersonAdd,
+              contentDescription = "Invite Person",
+              modifier = Modifier.size(14.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("➕ 邀請好戰友/網上考友", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+          }
+        }
+
+        // Teammates Online status list
+        Text(
+          "💬 小組成員在線狀態：",
+          fontSize = 11.sp,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Column(
+          verticalArrangement = Arrangement.spacedBy(6.dp),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          onlinePeers.forEach { peer ->
+            val isUserSelf = peer.id == "g5"
+            Card(
+              colors = CardDefaults.cardColors(
+                containerColor = if (isUserSelf) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
+              ),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .padding(10.dp)
+                  .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  // Live Dot
+                  Box(
+                    modifier = Modifier
+                      .size(10.dp)
+                      .background(
+                        color = when {
+                          !peer.isOnline -> Color(0xFFB0BEC5)
+                          peer.status.contains("休息") -> Color(0xFFFFB300)
+                          else -> Color(0xFF4CAF50)
+                        },
+                        shape = CircleShape
+                      )
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Column {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                      Text(peer.name, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                      if (isUserSelf) {
+                        Box(
+                          modifier = Modifier
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                          Text("你", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                        }
+                      }
+                    }
+                    Text("${peer.schoolTag} • ${peer.status}", fontSize = 10.sp, color = Color.Gray)
+                  }
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                  Text(
+                    "${peer.focusedMinutesToday} 分鐘",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.primary
+                  )
+                  Text("今日累計", fontSize = 9.sp, color = Color.Gray)
+                }
+              }
+            }
+          }
+        }
+
+        // Peer Pressure dynamic comment
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFFFF9C4), RoundedCornerShape(6.dp))
+            .border(1.dp, Color(0xFFFBC02D).copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+            .padding(10.dp)
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.Warning,
+              contentDescription = "Pressure icon",
+              modifier = Modifier.size(16.dp),
+              tint = Color(0xFFE65100)
+            )
+            val topPeer = onlinePeers.filter { it.id != "g5" }.maxByOrNull { it.focusedMinutesToday }
+            val dynamicAdvice = if (topPeer != null) {
+              "同儕壓力激發！「${topPeer.name}」今日已累計溫習「${topPeer.focusedMinutesToday} 分鐘」！別放棄，立刻開機迎頭趕上！🚀"
+            } else {
+              "組內戰備啟動！與考友一同在線合修中，彼此鞭策方可直奔 5**！"
+            }
+            Text(
+              dynamicAdvice,
+              fontSize = 11.sp,
+              color = Color(0xFFE65100),
+              fontWeight = FontWeight.Bold,
+              lineHeight = 15.sp,
+              modifier = Modifier.weight(1f)
+            )
+          }
+        }
+
+        Divider(color = Color.LightGray.copy(alpha = 0.3f), thickness = 1.dp)
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.Leaderboard,
+              contentDescription = "Leaderboard",
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(16.dp)
+            )
+            Text(
+              "📊 實時精準排名 (小組內今日時數)",
+              fontSize = 12.sp,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary
+            )
+          }
+
+          Text(
+            "實時連線更新中 ⚡",
+            fontSize = 9.sp,
+            color = Color(0xFF388E3C),
+            fontWeight = FontWeight.Bold
+          )
+        }
+
+        Column(
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+          modifier = Modifier.fillMaxWidth()
+        ) {
+          val sortedList = onlinePeers.sortedByDescending { it.focusedMinutesToday }
+          sortedList.forEachIndexed { index, peer ->
+            val rankNum = index + 1
+            val isUserSelf = peer.id == "g5"
+            val medal = when (rankNum) {
+              1 -> "🥇"
+              2 -> "🥈"
+              3 -> "🥉"
+              else -> "🎖️"
+            }
+            Card(
+              colors = CardDefaults.cardColors(
+                containerColor = if (isUserSelf) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surface
+              ),
+              border = androidx.compose.foundation.BorderStroke(
+                width = 1.dp,
+                color = if (isUserSelf) MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f) else Color.LightGray.copy(alpha = 0.1f)
+              ),
+              modifier = Modifier.fillMaxWidth()
+            ) {
+              Row(
+                modifier = Modifier
+                  .padding(8.dp)
+                  .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Text(medal, fontSize = 14.sp)
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text(
+                    "$rankNum. ${peer.name}",
+                    fontSize = 11.sp,
+                    fontWeight = if (isUserSelf) FontWeight.Black else FontWeight.Bold,
+                    color = if (isUserSelf) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                  )
+                }
+
+                Text(
+                  "${peer.focusedMinutesToday} Mins",
+                  fontSize = 11.sp,
+                  fontFamily = FontFamily.Monospace,
+                  fontWeight = FontWeight.Bold
+                )
+              }
+            }
+          }
+        }
+      } else {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          Text("你目前不屬於任何線上讀書小組 🤔", fontSize = 12.sp, color = Color.Gray)
+          Button(
+            onClick = { viewModel.joinOrCreateGroup("DSE 5** 黃金衝刺組 (04)") },
+            modifier = Modifier.testTag("quick_join_room_button")
+          ) {
+            Text("一鍵加入預設 5** 考友合修房", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+          }
+        }
+      }
+    }
+  }
+
+  // Invite Friend Dialog list
+  if (showFriendInviteDialog) {
+    Dialog(onDismissRequest = { showFriendInviteDialog = false }) {
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(16.dp)
+          .testTag("invite_friend_dialog"),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+      ) {
+        Column(
+          modifier = Modifier.padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          Text(
+            "➕ 邀請 DSE 好友/同窗戰友加入房間",
+            fontWeight = FontWeight.Black,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.primary
+          )
+
+          OutlinedTextField(
+            value = inviteFriendName,
+            onValueChange = { inviteFriendName = it },
+            label = { Text("戰友暱稱 Nickname", fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("invite_friend_name_input")
+          )
+
+          OutlinedTextField(
+            value = inviteFriendSchool,
+            onValueChange = { inviteFriendSchool = it },
+            label = { Text("就讀高中 High School (例如: 喇沙書院)", fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("invite_friend_school_input")
+          )
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            TextButton(onClick = { showFriendInviteDialog = false }) {
+              Text("取消 Cancel", fontSize = 12.sp, color = Color.Gray)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+              onClick = {
+                if (inviteFriendName.isNotBlank() && inviteFriendSchool.isNotBlank()) {
+                  viewModel.addFriendToGroup(inviteFriendName, inviteFriendSchool)
+                  Toast.makeText(context, "🎉 已成功將親密戰友 [$inviteFriendName] 連線拉入小組！實施督促作用！", Toast.LENGTH_SHORT).show()
+                  inviteFriendName = ""
+                  inviteFriendSchool = ""
+                  showFriendInviteDialog = false
+                } else {
+                  Toast.makeText(context, "🚫 暱稱和學校都要填寫喔！", Toast.LENGTH_SHORT).show()
+                }
+              },
+              modifier = Modifier.testTag("confirm_invite_friend_button")
+            ) {
+              Text("召喚戰友", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Switch Room Dialog list
+  if (showRoomSwitchDialog) {
+    Dialog(onDismissRequest = { showRoomSwitchDialog = false }) {
+      Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(16.dp)
+          .testTag("switch_room_dialog"),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+      ) {
+        Column(
+          modifier = Modifier.padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          Text(
+            "🔁 切換 / 開創 DSE 讀書小組房間",
+            fontWeight = FontWeight.Black,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.primary
+          )
+
+          Text(
+            "輸入一個新的房間識別碼（例如：英文寫作衝刺班、中大醫科自修閣），就能與同一批考友同時專注溫習！",
+            fontSize = 11.sp,
+            color = Color.Gray,
+            lineHeight = 15.sp
+          )
+
+          OutlinedTextField(
+            value = switchRoomName,
+            onValueChange = { switchRoomName = it },
+            label = { Text("房間識別碼 Room Code/Name", fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .testTag("switch_room_name_input")
+          )
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            TextButton(onClick = { showRoomSwitchDialog = false }) {
+              Text("取消 Cancel", fontSize = 12.sp, color = Color.Gray)
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+              onClick = {
+                if (switchRoomName.isNotBlank()) {
+                  viewModel.joinOrCreateGroup(switchRoomName)
+                  Toast.makeText(context, "🚪 成功開門傳送！已切換至全新房間：[$switchRoomName]！", Toast.LENGTH_SHORT).show()
+                  switchRoomName = ""
+                  showRoomSwitchDialog = false
+                } else {
+                  Toast.makeText(context, "🚫 房間識別碼不能為空喔！", Toast.LENGTH_SHORT).show()
+                }
+              },
+              modifier = Modifier.testTag("confirm_switch_room_button")
+            ) {
+              Text("進入房間", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+          }
+        }
+      }
     }
   }
 }
