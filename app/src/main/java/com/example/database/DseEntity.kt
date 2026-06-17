@@ -79,3 +79,23 @@ data class PastPaperResourceEntity(
   val isDownloaded: Boolean = false,
   val localFilePath: String? = null
 )
+
+@Entity(tableName = "study_plan")
+data class StudyPlanEntity(
+  @PrimaryKey val subjectId: String, // math, physics, chemistry, english, chinese, biology, math_m, bafs_ict, humanities
+  val isSelected: Boolean = false,
+  val targetGrade: String = "5",
+  val weeklyHours: Float = 6f,
+  val notes: String = ""
+)
+
+@Entity(tableName = "study_tasks")
+data class StudyTaskEntity(
+  @PrimaryKey(autoGenerate = true) val id: Int = 0,
+  val subjectId: String,
+  val taskText: String,
+  val isCompleted: Boolean = false,
+  val targetDate: String = "每日",
+  val timestamp: Long = System.currentTimeMillis()
+)
+

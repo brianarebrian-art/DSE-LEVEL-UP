@@ -12,9 +12,11 @@ import androidx.room.RoomDatabase
     MistakeEntity::class,
     CompletedQuestionEntity::class,
     BadgeEntity::class,
-    PastPaperResourceEntity::class
+    PastPaperResourceEntity::class,
+    StudyPlanEntity::class,
+    StudyTaskEntity::class
   ],
-  version = 3,
+  version = 4,
   exportSchema = false
 )
 abstract class DseDatabase : RoomDatabase() {

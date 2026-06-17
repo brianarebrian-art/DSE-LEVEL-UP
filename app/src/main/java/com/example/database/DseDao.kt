@@ -77,4 +77,27 @@ interface DseDao {
 
   @Query("UPDATE past_paper_resources SET isDownloaded = :isDownloaded, localFilePath = :localFilePath, downloadCount = :downloadCount WHERE id = :id")
   suspend fun updatePastPaperDownloadStatus(id: String, isDownloaded: Boolean, localFilePath: String?, downloadCount: Int)
+
+  // Study Plan
+  @Query("SELECT * FROM study_plan")
+  fun getAllStudyPlansFlow(): Flow<List<StudyPlanEntity>>
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertStudyPlans(plans: List<StudyPlanEntity>)
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertStudyPlan(plan: StudyPlanEntity)
+
+  // Study Tasks
+  @Query("SELECT * FROM study_tasks ORDER BY timestamp DESC")
+  fun getAllStudyTasksFlow(): Flow<List<StudyTaskEntity>>
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertStudyTask(task: StudyTaskEntity)
+
+  @Query("DELETE FROM study_tasks WHERE id = :id")
+  suspend fun deleteStudyTask(id: Int)
+
+  @Query("UPDATE study_tasks SET isCompleted = :isCompleted WHERE id = :id")
+  suspend fun updateTaskStatus(id: Int, isCompleted: Boolean)
 }

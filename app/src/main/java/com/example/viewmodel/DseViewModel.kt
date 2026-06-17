@@ -149,12 +149,58 @@ class DseViewModel(application: Application) : AndroidViewModel(application) {
   private val _groupRoomName = MutableStateFlow("DSE 5** 黃金衝刺組 (04)")
   val groupRoomName: StateFlow<String> = _groupRoomName.asStateFlow()
 
+  val allStudyPlans = repository.allStudyPlans.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
+  val allStudyTasks = repository.allStudyTasks.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
+  fun updateStudyPlan(plan: StudyPlanEntity) {
+    viewModelScope.launch {
+      repository.insertStudyPlan(plan)
+    }
+  }
+
+  fun addStudyTask(subjectId: String, taskText: String, targetDate: String) {
+    viewModelScope.launch {
+      repository.insertStudyTask(StudyTaskEntity(
+        subjectId = subjectId,
+        taskText = taskText,
+        isCompleted = false,
+        targetDate = targetDate
+      ))
+    }
+  }
+
+  fun deleteStudyTask(id: Int) {
+    viewModelScope.launch {
+      repository.deleteStudyTask(id)
+    }
+  }
+
+  fun toggleTaskCompletion(id: Int, isCompleted: Boolean) {
+    viewModelScope.launch {
+      repository.updateTaskStatus(id, isCompleted)
+    }
+  }
+
   private var focusTimerJob: kotlinx.coroutines.Job? = null
 
   init {
     viewModelScope.launch {
       preloadInitialQuestions()
       preloadPastPaperResources()
+      try {
+        preloadInitialStudyPlans()
+      } catch (e: Exception) {
+        e.printStackTrace()
+      }
     }
   }
 
@@ -1315,6 +1361,33 @@ class DseViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     database.dseDao().insertPastPaperResources(resources)
+  }
+
+  private suspend fun preloadInitialStudyPlans() {
+    val existing = database.dseDao().getAllStudyPlansFlow().firstOrNull()
+    if (existing != null && existing.isNotEmpty()) return
+
+    val initialPlans = listOf(
+      StudyPlanEntity("math", isSelected = true, targetGrade = "5*", weeklyHours = 8f, notes = "重點增強：二次方程平移、圓的方程動點軌跡。"),
+      StudyPlanEntity("physics", isSelected = true, targetGrade = "5", weeklyHours = 6f, notes = "重點增強：電磁感應描述、功能定理與碰撞守恆。"),
+      StudyPlanEntity("chemistry", isSelected = false, targetGrade = "4", weeklyHours = 4f, notes = "重點增強：摩爾溶液計算與常規酸鹼滴定步驟。"),
+      StudyPlanEntity("english", isSelected = true, targetGrade = "5", weeklyHours = 5f, notes = "重點增強：句型流暢性與主客觀對照詞彙背誦。"),
+      StudyPlanEntity("chinese", isSelected = false, targetGrade = "4", weeklyHours = 4f, notes = "重點增強：文言字詞最簡代元、文藝修辭脈絡。"),
+      StudyPlanEntity("biology", isSelected = false, targetGrade = "4", weeklyHours = 3f, notes = "重點增強：細胞呼吸、酶活性影響及遺傳圖譜分析。"),
+      StudyPlanEntity("math_m", isSelected = false, targetGrade = "5", weeklyHours = 5f, notes = "重點增強：微積分鏈式法則與矩陣行列式極解。"),
+      StudyPlanEntity("bafs_ict", isSelected = false, targetGrade = "4", weeklyHours = 3f, notes = "重點增強：資產負債表對賬、網絡協議與算法偽代碼。"),
+      StudyPlanEntity("humanities", isSelected = false, targetGrade = "4", weeklyHours = 3f, notes = "重點增強：考論分析框架、歷史史事因果脈絡梳理。")
+    )
+    database.dseDao().insertStudyPlans(initialPlans)
+
+    val initialTasks = listOf(
+      StudyTaskEntity(subjectId = "math", taskText = "完成 10 條圓方程與軌跡 DSE 改寫選擇題", isCompleted = false, targetDate = "星期一"),
+      StudyTaskEntity(subjectId = "physics", taskText = "用費曼學習法解釋「冷次定律與電磁感應」", isCompleted = false, targetDate = "星期三"),
+      StudyTaskEntity(subjectId = "english", taskText = "觀看 1 節 Marking Scheme 中主動回想的高頻痛點複盤", isCompleted = false, targetDate = "星期五")
+    )
+    for (task in initialTasks) {
+      database.dseDao().insertStudyTask(task)
+    }
   }
 }
 

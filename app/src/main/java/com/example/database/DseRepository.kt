@@ -80,4 +80,28 @@ class DseRepository(private val dseDao: DseDao) {
   suspend fun updatePastPaperDownloadStatus(id: String, isDownloaded: Boolean, localFilePath: String?, downloadCount: Int) {
     dseDao.updatePastPaperDownloadStatus(id, isDownloaded, localFilePath, downloadCount)
   }
+
+  // Study plans and tasks
+  val allStudyPlans: Flow<List<StudyPlanEntity>> = dseDao.getAllStudyPlansFlow()
+  val allStudyTasks: Flow<List<StudyTaskEntity>> = dseDao.getAllStudyTasksFlow()
+
+  suspend fun insertStudyPlans(plans: List<StudyPlanEntity>) {
+    dseDao.insertStudyPlans(plans)
+  }
+
+  suspend fun insertStudyPlan(plan: StudyPlanEntity) {
+    dseDao.insertStudyPlan(plan)
+  }
+
+  suspend fun insertStudyTask(task: StudyTaskEntity) {
+    dseDao.insertStudyTask(task)
+  }
+
+  suspend fun deleteStudyTask(id: Int) {
+    dseDao.deleteStudyTask(id)
+  }
+
+  suspend fun updateTaskStatus(id: Int, isCompleted: Boolean) {
+    dseDao.updateTaskStatus(id, isCompleted)
+  }
 }

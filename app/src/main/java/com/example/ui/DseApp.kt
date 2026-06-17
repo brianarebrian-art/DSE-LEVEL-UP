@@ -184,7 +184,7 @@ fun DseMainApp(viewModel: DseViewModel) {
               viewModel.changeSubject(it)
               currentTab = DseScreen.PRACTICE
             })
-            DseScreen.REVISION -> RevisionScreen()
+            DseScreen.REVISION -> RevisionScreen(viewModel = viewModel)
             DseScreen.LEADERBOARD -> LeaderboardScreen(userPoints = progress?.scorePoints ?: 120)
           }
         }
@@ -4076,12 +4076,30 @@ fun MistakesScreen(
 }
 
 @Composable
-fun RevisionScreen() {
+fun RevisionScreen(viewModel: DseViewModel) {
     var selectedSubTab by remember { mutableStateOf(0) }
-    var targetSubjectsState by remember { mutableStateOf(setOf("math", "physics", "chemistry", "english")) }
     var daysRemainingState by remember { mutableStateOf(100f) }
     var reviewRemindersEnabled by remember { mutableStateOf(true) }
-    var completedPlanItemsState by remember { mutableStateOf(setOf<String>()) }
+
+    // Read states from Room
+    val allPlans by viewModel.allStudyPlans.collectAsStateWithLifecycle()
+    val allTasks by viewModel.allStudyTasks.collectAsStateWithLifecycle()
+    val completedQs by viewModel.completedQuestions.collectAsStateWithLifecycle()
+    val pastPapers by viewModel.allPastPaperResources.collectAsStateWithLifecycle()
+    val mistakes by viewModel.allMistakes.collectAsStateWithLifecycle()
+
+    // Dialog state
+    var showReminderDialog by remember { mutableStateOf(false) }
+    var reminderDialogText by remember { mutableStateOf("") }
+
+    // Forms for adding custom tasks
+    var newTaskText by remember { mutableStateOf("") }
+    var newTaskSubject by remember { mutableStateOf("math") }
+    var newTaskDay by remember { mutableStateOf("每日") }
+
+    // Form states for manual adjustments
+    var editingSubjectKey by remember { mutableStateOf<String?>(null) }
+    var editingNotesText by remember { mutableStateOf("") }
 
     // Balanced responsive horizontal tabs - Scrollable Row
     val tabs = listOf(
@@ -4116,6 +4134,46 @@ fun RevisionScreen() {
 
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
 
+    val subjectsMap = mapOf(
+      "math" to "📐 數學 (必修部分)",
+      "math_m" to "📈 數學選修 M1 / M2",
+      "physics" to "⚡ 物理科",
+      "chemistry" to "🧪 化學科",
+      "biology" to "🧬 生物科",
+      "english" to "🇬🇧 英文必修科",
+      "chinese" to "🇨🇳 中文必修科",
+      "bafs_ict" to "💼 BAFS 商業 / ICT 資訊科技",
+      "humanities" to "📚 中史 / 歷史 / 地理選修"
+    )
+
+    // Alert Dialog for Simulated Reminder
+    if (showReminderDialog) {
+      AlertDialog(
+        onDismissRequest = { showReminderDialog = false },
+        title = {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            Icon(
+              imageVector = Icons.Default.NotificationsActive,
+              contentDescription = "Alert",
+              tint = MaterialTheme.colorScheme.primary
+            )
+            Text("⏰ HKDSE Level Up 智慧溫習提醒", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+          }
+        },
+        text = {
+          Text(reminderDialogText, fontSize = 12.sp, lineHeight = 18.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        confirmButton = {
+          TextButton(onClick = { showReminderDialog = false }) {
+            Text("收到！聽日繼續 Level Up", fontWeight = FontWeight.Bold)
+          }
+        }
+      )
+    }
+
     Column(
       modifier = Modifier
         .fillMaxSize()
@@ -4123,308 +4181,798 @@ fun RevisionScreen() {
       verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
       LazyRow(
-      modifier = Modifier.fillMaxWidth().testTag("revision_tab_row"),
-      horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-      itemsIndexed(tabs) { idx, title ->
-        val selected = selectedSubTab == idx
-        Card(
-          colors = CardDefaults.cardColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-          ),
-          modifier = Modifier
-            .clickable { selectedSubTab = idx }
-            .testTag("revision_tab_$idx")
-        ) {
-          Box(
+        modifier = Modifier.fillMaxWidth().testTag("revision_tab_row"),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+      ) {
+        itemsIndexed(tabs) { idx, title ->
+          val selected = selectedSubTab == idx
+          Card(
+            colors = CardDefaults.cardColors(
+              containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+            ),
             modifier = Modifier
-              .padding(horizontal = 12.dp, vertical = 8.dp),
-            contentAlignment = Alignment.Center
+              .clickable { selectedSubTab = idx }
+              .testTag("revision_tab_$idx")
           ) {
-            Text(
-              text = title,
-              fontSize = 11.sp,
-              fontWeight = FontWeight.Bold,
-              color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Box(
+              modifier = Modifier
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+              contentAlignment = Alignment.Center
+            ) {
+              Text(
+                text = title,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+              )
+            }
           }
         }
       }
-    }
 
-    Spacer(modifier = Modifier.height(2.dp))
+      Spacer(modifier = Modifier.height(2.dp))
 
-    LazyColumn(
-      modifier = Modifier.weight(1f).fillMaxWidth().testTag("revision_content_column"),
-      verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-      when (selectedSubTab) {
-        0 -> { // Modern Personalized Study Schedule
-          item {
-            Card(
-              colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-              ),
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                  "📊 HKDSE 學習計劃底層生成規則 (P0 - P4 戰術優先度)",
-                  fontWeight = FontWeight.ExtraBold,
-                  fontSize = 13.sp,
-                  color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                  "• P0 必爭地 (數學/M1/M2) — 秒殺與即時批改\n" +
-                  "• P1 理英重心 (物化生/英文) — 重組與解法對稱\n" +
-                  "• P2 理論及格 (中文/BAFS/ICT) — 高階語意改寫\n" +
-                  "• P3-P4 小眾人文與冷門科目 — 重在脈絡框架",
-                  fontSize = 11.sp,
-                  color = MaterialTheme.colorScheme.onPrimaryContainer,
-                  lineHeight = 15.sp
-                )
+      LazyColumn(
+        modifier = Modifier.weight(1f).fillMaxWidth().testTag("revision_content_column"),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+      ) {
+        when (selectedSubTab) {
+          0 -> { // Dynamic Room Study Planner
+            item {
+              Card(
+                colors = CardDefaults.cardColors(
+                  containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                  Text(
+                    "📊 HKDSE 智能溫習計劃生成器",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.primary
+                  )
+                  Text(
+                    "根據您的目標分數、實際做題答對率和盲點，系統自動編排每日練習重點及推薦下載資源，讓您隨時調整與追蹤進度！",
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                  )
+                }
               }
             }
-          }
 
-          // 1. Selector segment for target subjects
-          item {
-            Card(
-              modifier = Modifier.fillMaxWidth(),
-              border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
-            ) {
-              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("📌 勾選你要迎戰的 HKDSE 科目：", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+            // SECTION 1: Target Choice & Adjustments (讓用戶輸入加強科目與目標分數)
+            item {
+              Card(
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
+              ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                  Text(
+                    "🎯 1. 設置加強科目、目標分數與每週安排 (可隨時調整)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                  )
 
-                // Render Priority Checkboxes
-                val subjectsByPriority = listOf(
-                  Triple("math", "📐 P0 數學 (必修部分)", "P0"),
-                  Triple("math_m", "📈 P0 數學選修 M1 / M2", "P0"),
-                  Triple("physics", "⚡ P1 物理科", "P1"),
-                  Triple("chemistry", "🧪 P1 化學科", "P1"),
-                  Triple("biology", "🧬 P1 生物科", "P1"),
-                  Triple("english", "🇬🇧 P1 英文必修科", "P1"),
-                  Triple("chinese", "🇨🇳 P2 中文必修科", "P2"),
-                  Triple("bafs_ict", "💼 P2 BAFS 商業 / ICT 資訊科技", "P2"),
-                  Triple("humanities", "📚 P3-P4 中史 / 歷史 / 地理選修", "P3")
-                )
+                  subjectsMap.forEach { (subId, label) ->
+                    val plan = allPlans.firstOrNull { it.subjectId == subId } ?: com.example.database.StudyPlanEntity(subId)
+                    
+                    Column(
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp)
+                    ) {
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                      ) {
+                        Checkbox(
+                          checked = plan.isSelected,
+                          onCheckedChange = { isChecked ->
+                            viewModel.updateStudyPlan(plan.copy(isSelected = isChecked))
+                          },
+                          modifier = Modifier.size(24.dp).testTag("select_plan_$subId")
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                          label,
+                          fontSize = 12.sp,
+                          fontWeight = if (plan.isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                          color = if (plan.isSelected) MaterialTheme.colorScheme.primary else Color.Black,
+                          modifier = Modifier.weight(1f)
+                        )
+                      }
 
-                subjectsByPriority.forEach { (subKey, label, priority) ->
-                  val isChecked = targetSubjectsState.contains(subKey)
-                  Row(
-                    modifier = Modifier
-                      .fillMaxWidth()
-                      .clickable {
-                        targetSubjectsState = if (isChecked) {
-                          targetSubjectsState - subKey
-                        } else {
-                          targetSubjectsState + subKey
+                      if (plan.isSelected) {
+                        Card(
+                          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                          modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 32.dp, top = 4.dp, bottom = 4.dp)
+                        ) {
+                          Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // Target grade and hours adjustment
+                            Row(
+                              modifier = Modifier.fillMaxWidth(),
+                              horizontalArrangement = Arrangement.SpaceBetween,
+                              verticalAlignment = Alignment.CenterVertically
+                            ) {
+                              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("🎯 目標：", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                  listOf("5**", "5*", "5", "4", "3").forEach { grade ->
+                                    val isSelected = plan.targetGrade == grade
+                                    Text(
+                                      text = grade,
+                                      fontSize = 9.sp,
+                                      fontWeight = FontWeight.Bold,
+                                      color = if (isSelected) Color.White else MaterialTheme.colorScheme.primary,
+                                      modifier = Modifier
+                                        .background(
+                                          if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                          shape = androidx.compose.foundation.shape.RoundedCornerShape(3.dp)
+                                        )
+                                        .clickable {
+                                          viewModel.updateStudyPlan(plan.copy(targetGrade = grade))
+                                        }
+                                        .border(1.dp, MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.RoundedCornerShape(3.dp))
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                  }
+                                }
+                              }
+                              
+                              Text(
+                                "⏱️ ${plan.weeklyHours.toInt()} 小時/週",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.secondary
+                              )
+                            }
+
+                            // Slider to adjust weekly hours
+                            Slider(
+                              value = plan.weeklyHours,
+                              onValueChange = { hours ->
+                                viewModel.updateStudyPlan(plan.copy(weeklyHours = hours.coerceIn(1f, 15f)))
+                              },
+                              valueRange = 1f..15f,
+                              modifier = Modifier
+                                .fillMaxWidth()
+                                .height(16.dp)
+                            )
+
+                            // Notes section editing
+                            if (editingSubjectKey == subId) {
+                              Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                              ) {
+                                OutlinedTextField(
+                                  value = editingNotesText,
+                                  onValueChange = { editingNotesText = it },
+                                  textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                                  modifier = Modifier.weight(1f),
+                                  singleLine = true,
+                                  placeholder = { Text("例如：每晚操題、多背重點", fontSize = 10.sp) }
+                                )
+                                IconButton(
+                                  onClick = {
+                                    viewModel.updateStudyPlan(plan.copy(notes = editingNotesText))
+                                    editingSubjectKey = null
+                                  },
+                                  modifier = Modifier.size(24.dp)
+                                ) {
+                                  Icon(Icons.Default.Check, "Save", tint = Color(0xFF28A745))
+                                }
+                              }
+                            } else {
+                              Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                              ) {
+                                Text(
+                                  if (plan.notes.isNotEmpty()) "📝 備註：${plan.notes}" else "📝 點擊右側按鈕添加溫習細節安排",
+                                  fontSize = 10.sp,
+                                  color = Color.DarkGray,
+                                  modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                  onClick = {
+                                    editingSubjectKey = subId
+                                    editingNotesText = plan.notes
+                                  },
+                                  modifier = Modifier.size(20.dp)
+                                ) {
+                                  Icon(Icons.Default.Edit, "Edit notes", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                                }
+                              }
+                            }
+                          }
                         }
                       }
-                      .padding(vertical = 4.dp),
+                    }
+                  }
+                }
+              }
+            }
+
+            // SECTION 2: Strength & Weakness Analysis (分析強弱項 - 優先使用數據)
+            item {
+              Card(
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
+              ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text(
+                    "📊 2. 🤖 AI 智能強弱項分析（數據庫即時驅動）",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                  )
+
+                  val activeSelectedPlans = allPlans.filter { it.isSelected }
+
+                  if (activeSelectedPlans.isEmpty()) {
+                    Text(
+                      "💡 請在上方勾選加強科目以展開強弱項與溫盤對抗分析！",
+                      fontSize = 11.sp,
+                      color = Color.Gray,
+                      fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                  } else {
+                    activeSelectedPlans.forEach { plan ->
+                      val subName = subjectsMap[plan.subjectId] ?: plan.subjectId
+                      // Find real practice data
+                      val subjectCompleted = completedQs.filter { it.subject == plan.subjectId }
+                      val total = subjectCompleted.size
+                      val correct = subjectCompleted.count { it.isCorrect }
+                      val completedCorrectRate = if (total > 0) (correct * 100) / total else null
+
+                      Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Row(
+                          modifier = Modifier.fillMaxWidth(),
+                          horizontalArrangement = Arrangement.SpaceBetween,
+                          verticalAlignment = Alignment.CenterVertically
+                        ) {
+                          Text(subName, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                          
+                          if (completedCorrectRate != null) {
+                            Text(
+                              "答對率: $completedCorrectRate% ($correct/$total 題)",
+                              fontSize = 10.sp,
+                              fontWeight = FontWeight.Bold,
+                              color = if (completedCorrectRate >= 70) Color(0xFF28A745) else if (completedCorrectRate >= 45) Color(0xFFD39E00) else Color.Red
+                            )
+                          } else {
+                            Text(
+                              "暫無數據，目標 ${plan.targetGrade}級 分配中",
+                              fontSize = 9.sp,
+                              color = Color.Gray
+                            )
+                          }
+                        }
+
+                        // Progress representation
+                        Spacer(modifier = Modifier.height(2.dp))
+                        val progressFraction = if (completedCorrectRate != null) completedCorrectRate / 100f else {
+                          // fallback base based on target grade
+                          when (plan.targetGrade) {
+                            "5**" -> 0.9f
+                            "5*" -> 0.82f
+                            "5" -> 0.72f
+                            "4" -> 0.58f
+                            else -> 0.45f
+                          }
+                        }
+
+                        LinearProgressIndicator(
+                          progress = progressFraction,
+                          modifier = Modifier.fillMaxWidth().height(6.dp),
+                          color = if (progressFraction >= 0.70f) Color(0xFF28A745) else if (progressFraction >= 0.45f) Color(0xFFFFC107) else Color(0xFFDC3545),
+                          trackColor = Color.LightGray.copy(alpha = 0.3f)
+                        )
+
+                        // Action recommendations based on performance
+                        val statusDesc = when {
+                          completedCorrectRate != null && completedCorrectRate >= 70 -> "🔥 強項：概念鞏固良好。DSE 考場 3-Pass 溫習中，建議高維攻堅 Hard 改寫試題，穩守 5/5* 級！"
+                          completedCorrectRate != null && completedCorrectRate >= 45 -> "⚡ 中等發揮：概念基本合格但常規代數及細節易錯。請重做「錯題本」所有本學科題目，防止失分！"
+                          completedCorrectRate != null -> "🚨 核心弱項：基礎盲點較多，答對率偏低。請對照 AI 導師的「高頻考點口訣」重新研讀 Marking Scheme。"
+                          else -> "📋 待激活：尚未有當前科目的星級練兵練習數據。做題後系統將實施 5* 目標自適應引領。"
+                        }
+
+                        Text(
+                          statusDesc,
+                          fontSize = 9.5.sp,
+                          color = Color.Gray,
+                          lineHeight = 13.sp,
+                          modifier = Modifier.padding(top = 2.dp)
+                        )
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            // SECTION 3: Suggested Schedule & Review Points (建議每日或每週的學習時間表)
+            item {
+              Card(
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
+              ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text(
+                    "📅 3. 制定每日黃金溫習時間表與資源推薦",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                  )
+
+                  val activeSelectedPlans = allPlans.filter { it.isSelected }
+
+                  if (activeSelectedPlans.isEmpty()) {
+                    Text(
+                      "💡 立即勾選上方科目，系統將自動編排高能溫習日程！",
+                      fontSize = 11.sp,
+                      color = Color.Gray,
+                      fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                  } else {
+                    val daysSchedule = listOf(
+                      "星期一" to listOf("math", "math_m"),
+                      "星期二" to listOf("physics", "chemistry"),
+                      "星期三" to listOf("english"),
+                      "星期四" to listOf("chinese"),
+                      "星期五" to listOf("biology", "bafs_ict"),
+                      "星期六" to listOf("humanities"),
+                      "星期日" to listOf("math", "physics", "english") // secondary review
+                    )
+
+                    daysSchedule.forEach { (day, subjectsList) ->
+                      val matchingPlans = activeSelectedPlans.filter { subjectsList.contains(it.subjectId) }
+                      if (matchingPlans.isNotEmpty()) {
+                        Card(
+                          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                          border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.2f)),
+                          modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                        ) {
+                          Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                              "📅 $day 研習重點與戰術指標",
+                              fontSize = 11.sp,
+                              fontWeight = FontWeight.Bold,
+                              color = MaterialTheme.colorScheme.secondary
+                            )
+
+                            matchingPlans.forEach { plan ->
+                              val subName = subjectsMap[plan.subjectId] ?: plan.subjectId
+                              val focusPoint = when (plan.subjectId) {
+                                "math" -> "📐 複習重點：二次方程兩根關係、三次拐點平移、直線在三角形解析幾何中 C 值推導。"
+                                "math_m" -> "📈 複習重點：微積分極限運算、鏈式法則（Chain Rule）及誘導展開步驟分。"
+                                "physics" -> "⚡ 複習重點：功與能守恆原理做功定量運算、並聯電路功率等效電阻及電磁感應阻礙。"
+                                "chemistry" -> "🧪 複習重點：金屬活性順序反應爆發速度、稀釋 100 倍強酸 pH 代值及限量摩爾極限。"
+                                "english" -> "🇬🇧 複習重點：背誦 Academic Synonym 學術難字（Ubiquitous, Efficacy）、Neither...nor 主謂一致文法。"
+                                "chinese" -> "🇨🇳 複習重點：文言字詞最簡代元法、試卷二高維改寫議論框架、修辭與句式轉換。"
+                                "biology" -> "🧬 複習重點：細胞有氧呼吸速率、生物圈酶活性、光合作用光反應與碳反應對照。"
+                                "bafs_ict" -> "💼 複習重點：精研資產負債表複對賬平衡機制、商業算法虛擬跑道代碼設計與數據完整性、系統流程偽代碼。"
+                                "humanities" -> "📚 複習重點：中史/歷史選修大題目歷史因果因數梳理、地圖/數據多維度多角度答題框架建構。"
+                                else -> "📋 綜合考點高精細複盤與 DSE 對抗操卷訓練。"
+                              }
+
+                              val exerciseType = when (plan.targetGrade) {
+                                "5**", "5*" -> "💡 推薦題型：星級練兵的 Hard 經典題型、高倍專題，對齊 DseGrading 頂級步驟邏輯分。"
+                                "5", "4" -> "💡 推薦題型：Medium 中級常規轉換題，完成 3 條改寫並仔細閱讀 AI 閱卷官的對抗口訣。"
+                                else -> "💡 推薦題型：Easy/Medium 基礎概念改設題，保障基本盤分數。"
+                              }
+
+                              Column(modifier = Modifier.padding(start = 6.dp, top = 4.dp)) {
+                                Text(subName, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                Text(focusPoint, fontSize = 10.sp, color = Color.DarkGray, lineHeight = 13.sp)
+                                Text(exerciseType, fontSize = 9.5.sp, color = MaterialTheme.colorScheme.tertiary, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+
+                                // Recommendations of resources! (學習資源推薦)
+                                val recommendedPapers = pastPapers.filter { it.subject == plan.subjectId }.take(2)
+                                if (recommendedPapers.isNotEmpty()) {
+                                  Spacer(modifier = Modifier.height(4.dp))
+                                  Text("📥 推薦下載資源 (點擊直接下載)：", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                                  recommendedPapers.forEach { paper ->
+                                    Row(
+                                      modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                          viewModel.downloadPastPaper(paper.id)
+                                        }
+                                        .padding(vertical = 2.dp),
+                                      verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                      Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = "download",
+                                        modifier = Modifier.size(11.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                      )
+                                      Spacer(modifier = Modifier.width(4.dp))
+                                      Text(
+                                        "${paper.titleChinese} (${paper.fileSize})",
+                                        fontSize = 9.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = androidx.compose.ui.text.TextStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)
+                                      )
+                                    }
+                                  }
+                                }
+                              }
+                              Spacer(modifier = Modifier.height(6.dp))
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            // SECTION 4: Customizable Tasks (允許用戶調整學習計劃)
+            item {
+              Card(
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.5f))
+              ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                  Text(
+                    "📋 4. 自訂自修每日溫習清單（靈活修訂與記錄）",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                  )
+
+                  // Task insert Form
+                  Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedTextField(
+                      value = newTaskText,
+                      onValueChange = { newTaskText = it },
+                      label = { Text("新增學習目標任務（例如：做2道物理LQ、背10個新詞）", fontSize = 10.sp) },
+                      modifier = Modifier.fillMaxWidth(),
+                      textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp),
+                      singleLine = true
+                    )
+
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = Arrangement.spacedBy(6.dp),
+                      verticalAlignment = Alignment.CenterVertically
+                    ) {
+                      // Day selection via LazyRow
+                      Column(modifier = Modifier.weight(1f)) {
+                        Text("執行時間:", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        LazyRow(
+                          modifier = Modifier.fillMaxWidth(),
+                          horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                          val days = listOf("每日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日")
+                          items(days) { d ->
+                            val isSelected = newTaskDay == d
+                            Text(
+                              text = d,
+                              fontSize = 9.sp,
+                              color = if (isSelected) Color.White else Color.Black,
+                              modifier = Modifier
+                                .background(
+                                  if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray.copy(alpha = 0.5f),
+                                  shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                                )
+                                .clickable { newTaskDay = d }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                          }
+                        }
+                      }
+
+                      // Subject selection via LazyRow
+                      Column(modifier = Modifier.weight(1f)) {
+                        Text("對應科目:", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        LazyRow(
+                          modifier = Modifier.fillMaxWidth(),
+                          horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                          val keys = subjectsMap.keys.toList()
+                          items(keys) { subKey ->
+                            val label = subKey.uppercase()
+                            val isSelected = newTaskSubject == subKey
+                            Text(
+                              text = label,
+                              fontSize = 9.sp,
+                              color = if (isSelected) Color.White else Color.Black,
+                              modifier = Modifier
+                                .background(
+                                  if (isSelected) MaterialTheme.colorScheme.secondary else Color.LightGray.copy(alpha = 0.5f),
+                                  shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                                )
+                                .clickable { newTaskSubject = subKey }
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                          }
+                        }
+                      }
+                    }
+
+                    Button(
+                      onClick = {
+                        if (newTaskText.isNotBlank()) {
+                          viewModel.addStudyTask(newTaskSubject, newTaskText.trim(), newTaskDay)
+                          newTaskText = ""
+                        }
+                      },
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("add_custom_task_btn"),
+                      shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                    ) {
+                      Text("➕ 加入自訂學習計劃日程", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                  }
+
+                  Spacer(modifier = Modifier.height(4.dp))
+
+                  // List of Tasks
+                  val activeSelectedSubjectKeys = allPlans.filter { it.isSelected }.map { it.subjectId }.toSet()
+                  val shownTasks = allTasks.filter { activeSelectedSubjectKeys.isEmpty() || activeSelectedSubjectKeys.contains(it.subjectId) }
+
+                  if (shownTasks.isEmpty()) {
+                    Text(
+                      "💡 暫無相關自訂任務。請在上方添加或在加強科目中勾選您的 HKDSE 重點目標科目。",
+                      fontSize = 11.sp,
+                      color = Color.Gray,
+                      fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                    )
+                  } else {
+                    shownTasks.forEach { task ->
+                      val subLabel = subjectsMap[task.subjectId]?.split(" ")?.firstOrNull() ?: "📍"
+                      Card(
+                        colors = CardDefaults.cardColors(
+                          containerColor = if (task.isCompleted) Color(0xFFD4EDDA).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(
+                          1.dp,
+                          if (task.isCompleted) Color(0xFF28A745).copy(alpha = 0.2f) else Color.LightGray.copy(alpha = 0.2f)
+                        ),
+                        modifier = Modifier
+                          .fillMaxWidth()
+                          .padding(vertical = 2.dp)
+                      ) {
+                        Row(
+                          modifier = Modifier.padding(10.dp),
+                          verticalAlignment = Alignment.CenterVertically
+                        ) {
+                          Checkbox(
+                            checked = task.isCompleted,
+                            onCheckedChange = { isChecked ->
+                              viewModel.toggleTaskCompletion(task.id, isChecked)
+                            },
+                            modifier = Modifier.size(24.dp).testTag("custom_task_check_${task.id}")
+                          )
+                          Spacer(modifier = Modifier.width(8.dp))
+                          
+                          Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                              text = task.taskText,
+                              fontSize = 11.sp,
+                              fontWeight = FontWeight.Medium,
+                              style = androidx.compose.ui.text.TextStyle(
+                                textDecoration = if (task.isCompleted) androidx.compose.ui.text.style.TextDecoration.LineThrough else androidx.compose.ui.text.style.TextDecoration.None
+                              ),
+                              color = if (task.isCompleted) Color.Gray else Color.Black
+                            )
+                            Row(
+                              horizontalArrangement = Arrangement.spacedBy(8.dp),
+                              modifier = Modifier.padding(top = 2.dp)
+                            ) {
+                              Text(
+                                text = "📅 ${task.targetDate}",
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.secondary,
+                                fontWeight = FontWeight.Bold
+                              )
+                              Text(
+                                text = "科: ${subLabel}",
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                              )
+                            }
+                          }
+
+                          IconButton(
+                            onClick = { viewModel.deleteStudyTask(task.id) },
+                            modifier = Modifier.size(24.dp)
+                          ) {
+                            Icon(
+                              imageVector = Icons.Default.Delete,
+                              contentDescription = "Delete",
+                              tint = MaterialTheme.colorScheme.error,
+                              modifier = Modifier.size(16.dp)
+                            )
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            // SECTION 5: Spaced Reminders & Progress Adaptations (定期提醒與進度調整)
+            item {
+              Card(
+                colors = CardDefaults.cardColors(
+                  containerColor = if (reviewRemindersEnabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                   ) {
-                    Text(
-                      label,
-                      fontSize = 11.sp,
-                      fontWeight = if (isChecked) FontWeight.SemiBold else FontWeight.Normal,
-                      color = if (isChecked) MaterialTheme.colorScheme.primary else Color.Black
+                    Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                      modifier = Modifier.weight(1f)
+                    ) {
+                      Icon(
+                        imageVector = Icons.Default.NotificationsActive,
+                        contentDescription = "Reminders icon",
+                        tint = MaterialTheme.colorScheme.primary
+                      )
+                      Column {
+                        Text("⏰ DSE 雙迴圈智慧定時複習提醒", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("每晚 9:30 與考前半天，根據您的弱項答對率及任務進度，動態微調推送內容。", fontSize = 10.sp, color = Color.Gray)
+                      }
+                    }
+                    Switch(
+                      checked = reviewRemindersEnabled,
+                      onCheckedChange = { reviewRemindersEnabled = it },
+                      modifier = Modifier.testTag("reminder_plan_toggle")
                     )
-                    Checkbox(
-                      checked = isChecked,
-                      onCheckedChange = { isCheckedNow ->
-                        targetSubjectsState = if (isCheckedNow == true) {
-                          targetSubjectsState + subKey
+                  }
+
+                  if (reviewRemindersEnabled) {
+                    Button(
+                      onClick = {
+                        val activePlansList = allPlans.filter { it.isSelected }
+                        val activeSelectedSubjectCount = activePlansList.size
+                        val totalTasksToday = allTasks.count()
+                        val completedTasksToday = allTasks.count { it.isCompleted }
+
+                        val dialogMsg = if (activeSelectedSubjectCount == 0) {
+                          "🔔 DSE Level Up 定時提醒通知：\n\n您今日尚未選取任何學習計劃科目。請在【📅 學習計劃】界面中劃分您攻堅的科目和目標分數，以便系統為您實施每日對抗錯題和高頻考點解析推送！"
                         } else {
-                          targetSubjectsState - subKey
+                          val firstSelectedPlan = activePlansList.firstOrNull()
+                          val targetGradeVal = firstSelectedPlan?.targetGrade ?: "5"
+                          val focusSubjectLabel = subjectsMap[firstSelectedPlan?.subjectId] ?: "數學"
+
+                          val studyProgressText = if (totalTasksToday > 0) {
+                            "今日自訂任務完成進度為 $completedTasksToday/$totalTasksToday (${(completedTasksToday * 100) / totalTasksToday}%)！保持節奏！"
+                          } else {
+                            "今日暫無自訂清單。建議點擊「➕ 加入自訂學習計劃日程」新增您的溫習攻堅任務！"
+                          }
+
+                          // Analysing correct rate automatically for step 5 matching
+                          val subjCompleted = completedQs.filter { it.subject == firstSelectedPlan?.subjectId }
+                          val totalC = subjCompleted.size
+                          val corrects = subjCompleted.count { it.isCorrect }
+                          val subjCorrectRate = if (totalC > 0) (corrects * 100) / totalC else null
+
+                          val analysisAdaptText = when {
+                            subjCorrectRate != null && subjCorrectRate < 50 -> "\n\n⚠️ 【進度預警與自適應調整】：檢測到您在 ${focusSubjectLabel} 最新的改寫題答對率僅為 $subjCorrectRate%（極為吃力）。系統已為您自動降低題目難度，並在此時段引薦對應 Basic/Medium 等級的答題，建議今晚先主攻錯題庫！"
+                            subjCorrectRate != null && subjCorrectRate >= 75 -> "\n\n🔥 【星級卓越喜報】：太棒了！您在 ${focusSubjectLabel} 的答對率達到 $subjCorrectRate% 的 5** 水平。系統已為您自動調高題庫難度，並強烈推薦今晚攻研 Hard 改寫試題及 YouTube 星級解構！"
+                            else -> "\n\n🎯 【進度平穩】：您的首要科目 ${focusSubjectLabel} 目標為 $targetGradeVal 級，請對合考評局 Marking Scheme 不斷提煉步驟分。今晚 9:30 將智慧複盤您的本周錯題，不要忘記點擊『考場戰策』查閱 MC 3-Pass 答題術喔！"
+                          }
+
+                          "🔔 DSE Level Up 溫習提醒推送：\n\n【今日計劃度】：$studyProgressText$analysisAdaptText"
                         }
+
+                        reminderDialogText = dialogMsg
+                        showReminderDialog = true
                       },
-                      modifier = Modifier.size(24.dp).testTag("select_plan_subject_$subKey")
-                    )
+                      modifier = Modifier.fillMaxWidth().testTag("simulate_reminder_btn"),
+                      colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                      shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                    ) {
+                      Icon(
+                        imageVector = Icons.Default.Notifications,
+                        contentDescription = "Bell",
+                        modifier = Modifier.size(14.dp)
+                      )
+                      Spacer(modifier = Modifier.width(6.dp))
+                      Text("模擬推送定時提醒反思通知", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                   }
                 }
               }
             }
-          }
 
-          // 2. Countdown slider for target exam date
-          item {
-            Card(
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                  Text("⏳ 預計距離首科 DSE 考試天數：", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                  Text(
-                    "${daysRemainingState.toInt()} 天",
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 13.sp
+            // SECTION 6: Countdown Slider
+            item {
+              Card(
+                modifier = Modifier.fillMaxWidth()
+              ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("⏳ 預計距離首科 DSE 考試天數：", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text(
+                      "${daysRemainingState.toInt()} 天",
+                      fontWeight = FontWeight.ExtraBold,
+                      color = MaterialTheme.colorScheme.primary,
+                      fontSize = 13.sp
+                    )
+                  }
+
+                  Slider(
+                    value = daysRemainingState,
+                    onValueChange = { daysRemainingState = it },
+                    valueRange = 10f..180f,
+                    modifier = Modifier.fillMaxWidth().testTag("exam_days_slider")
                   )
-                }
 
-                Slider(
-                  value = daysRemainingState,
-                  onValueChange = { daysRemainingState = it },
-                  valueRange = 10f..180f,
-                  modifier = Modifier.fillMaxWidth().testTag("exam_days_slider")
-                )
-
-                val phaseText = when {
-                  daysRemainingState < 30f -> "🚨 進入 1-Month「極致操卷、全真模擬限時 Pass」黃金爆分期！"
-                  daysRemainingState < 60f -> "⚠️ 「鞏固重點、突破 DseGrading 步驟分」的核心攻堅期！"
-                  else -> "🎯 「全面夯實基本觀念、穩固底層邏輯」的體系奠定期。"
+                  val phaseText = when {
+                    daysRemainingState < 30f -> "🚨 進入 1-Month「極致操卷、全真模擬限時 Pass」黃金爆分期！"
+                    daysRemainingState < 60f -> "⚠️ 「鞏固重點、突破 DseGrading 步驟分」的核心攻堅期！"
+                    else -> "🎯 「全面夯實基本觀念、穩固底層邏輯」的體系奠定期。"
+                  }
+                  Text(phaseText, fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                 }
-                Text(phaseText, fontSize = 10.sp, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
               }
             }
-          }
 
-          // 3. Spaced review reminders switch toggler
-          item {
-            Card(
-              colors = CardDefaults.cardColors(
-                containerColor = if (reviewRemindersEnabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-              ),
-              modifier = Modifier.fillMaxWidth()
-            ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            // Security Protection Badge at the very bottom
+            item {
+              Card(
+                colors = CardDefaults.cardColors(
+                  containerColor = Color(0xFFECEFF1)
+                ),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
               ) {
                 Row(
+                  modifier = Modifier.padding(12.dp),
                   verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(8.dp),
-                  modifier = Modifier.weight(1f)
+                  horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                   Icon(
-                    imageVector = Icons.Default.NotificationsActive,
-                    contentDescription = "Review Notice",
-                    tint = MaterialTheme.colorScheme.primary
+                    imageVector = Icons.Default.Shield,
+                    contentDescription = "Security Shield",
+                    tint = Color(0xFF455A64),
+                    modifier = Modifier.size(28.dp)
                   )
                   Column {
-                    Text("⏰ 智慧間隔重複複習提醒", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text("系統會在每天晚上 9:30 與考前 1.5 小時，智能推送『AI 平台高頻錯題複盤與解法思維對照』。", fontSize = 10.sp, color = Color.Gray)
+                    Text(
+                      "🔐 DSE Level Up 安全合規沙盒保障",
+                      fontSize = 11.sp,
+                      fontWeight = FontWeight.Bold,
+                      color = Color(0xFF37474F)
+                    )
+                    Text(
+                      "本平台所有 AI 生成試題與考試解析均運行於安全的託管沙盒環境。我們特別優化了 Token 頻率限制、雙向 Prompt 防注入（WAF）與動態憑證儲存，有效防堵惡意 Token 竊取與系統越獄入侵，敬請安心專注溫習！",
+                      fontSize = 9.sp,
+                      color = Color(0xFF546E7A),
+                      lineHeight = 13.sp
+                    )
                   }
                 }
-                Switch(
-                  checked = reviewRemindersEnabled,
-                  onCheckedChange = { reviewRemindersEnabled = it },
-                  modifier = Modifier.testTag("reminder_plan_toggle")
-                )
               }
             }
           }
-
-          // 4. Dynamic Generated study schedule checklist items!
-          item {
-            Text("📋 為您量身定制的黃金每日學習時間表：", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
-          }
-
-          // Generate dynamic items based on target subjects selected!
-          val studyBlocks = mutableListOf<Pair<String, String>>()
-          if (targetSubjectsState.contains("math")) {
-            studyBlocks.add("P0_MATH" to "📐 1.5小時 DSE 必修數學：完成 10 題底層邏輯改寫題。重點訓練「圓的方程、二階變換、等幾何拐點解法」！")
-          }
-          if (targetSubjectsState.contains("math_m")) {
-            studyBlocks.add("P0_MATH_M" to "📈 1小時 數學 M1 / M2：模擬 Part B 大題目，嚴格執行 DseGrading 3級閱卷法核對，穩拿步驟分！")
-          }
-          if (targetSubjectsState.contains("physics") || targetSubjectsState.contains("chemistry") || targetSubjectsState.contains("biology")) {
-            studyBlocks.add("P1_SCIENCE" to "⚡/🧪 1.25小時 理科專項攻克：做2道化學/物理中度大題。草稿推演後立刻展開 Marking scheme 高維對照！")
-          }
-          if (targetSubjectsState.contains("english")) {
-            studyBlocks.add("P1_ENGLISH" to "🇬🇧 45分鐘 英文核心：閱讀 3 篇 DSE 改寫文章，熟悉邏輯連貫性（Cohesion）核心語法盲點。")
-          }
-          if (targetSubjectsState.contains("chinese")) {
-            studyBlocks.add("P2_CHINESE" to "🇨🇳 30分鐘 中文實體：高頻錯題翻閱、精準掌握文言實詞最簡代元轉換。")
-          }
-          if (studyBlocks.isEmpty()) {
-            studyBlocks.add("DEFAULT_PLAN" to "📍 請至少在上方勾選1門 HKDSE 科目以動態生成黃金戰術安排！")
-          }
-
-          items(studyBlocks) { (blockKey, blockText) ->
-            val blockDone = completedPlanItemsState.contains(blockKey)
-            Card(
-              colors = CardDefaults.cardColors(
-                containerColor = if (blockDone) Color(0xFFD4EDDA).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface
-              ),
-              border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (blockDone) Color(0xFF28A745).copy(alpha = 0.4f) else Color.LightGray.copy(alpha = 0.3f)
-              ),
-              modifier = Modifier.fillMaxWidth().testTag("plan_item_$blockKey")
-            ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-              ) {
-                Column(modifier = Modifier.weight(1f)) {
-                  Text(
-                    blockText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    lineHeight = 15.sp,
-                    color = if (blockDone) Color.Gray else Color.Black
-                  )
-                  if (blockDone) {
-                    Text("💡 狀態：今日已完滿推演，多巴胺分配完成！", fontSize = 9.sp, color = Color(0xFF28A745), fontWeight = FontWeight.Bold)
-                  }
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Checkbox(
-                  checked = blockDone,
-                  onCheckedChange = { isChecked ->
-                    completedPlanItemsState = if (isChecked == true) {
-                      completedPlanItemsState + blockKey
-                    } else {
-                      completedPlanItemsState - blockKey
-                    }
-                  },
-                  modifier = Modifier.size(24.dp).testTag("plan_check_$blockKey")
-                )
-              }
-            }
-          }
-
-          // Security Protection Badge at the very bottom
-          item {
-            Card(
-              colors = CardDefaults.cardColors(
-                containerColor = Color(0xFFECEFF1)
-              ),
-              modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-              ) {
-                Icon(
-                  imageVector = Icons.Default.Shield,
-                  contentDescription = "Security Shield",
-                  tint = Color(0xFF455A64),
-                  modifier = Modifier.size(28.dp)
-                )
-                Column {
-                  Text(
-                    "🔐 DSE Level Up 安全合規沙盒保障",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF37474F)
-                  )
-                  Text(
-                    "本平台所有 AI 生成試題與考試解析均運行於安全的託管沙盒環境。我們特別優化了 Token 頻率限制、雙向 Prompt 防注入（WAF）與動態憑證儲存，有效防堵惡意 Token 竊取與系統越獄入侵，敬請安心專注溫習！",
-                    fontSize = 9.sp,
-                    color = Color(0xFF546E7A),
-                    lineHeight = 13.sp
-                  )
-                }
-              }
-            }
-          }
-        }
 
         1 -> { // ⏱️ 考場戰策 (Bulletins & 3-Pass Strategy combined and fixed)
           item {
